@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/* ============================================
+   NOiSEMaKER - Cosmic Theme
+   ============================================ */
+
+/* Theme Colors */
+:root {
+  --neon-cyan: #00f6ff;
+  --neon-magenta: #ff4dff;
+  --neon-purple: #7a5bff;
+  --neon-pink: #ff6b9d;
+  --dark-bg: #0a0a0f;
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+/* Base Styles */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--dark-bg);
+  color: white;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Glass Card Utility */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 1rem;
+}
+
+/* Neon Glow Utilities */
+.glow-cyan {
+  box-shadow: 0 0 20px rgba(0, 246, 255, 0.4);
+}
+
+.glow-magenta {
+  box-shadow: 0 0 20px rgba(255, 77, 255, 0.4);
+}
+
+.glow-purple {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
+}
+
+/* Text Glow */
+.text-glow-cyan {
+  text-shadow: 0 0 20px rgba(0, 246, 255, 0.6);
+}
+
+.text-glow-magenta {
+  text-shadow: 0 0 20px rgba(255, 77, 255, 0.6);
+}
+
+/* Gradient Text */
+.gradient-text {
+  background: linear-gradient(to right, #a855f7, #ec4899, #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* CTA Button Base */
+.cta-button {
+  background: linear-gradient(to right, #7c3aed, #db2777);
+  color: white;
+  font-weight: 700;
+  padding: 1rem 2rem;
+  border-radius: 9999px;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
+  transition: all 0.3s ease;
+}
+
+.cta-button:hover {
+  background: linear-gradient(to right, #8b5cf6, #ec4899);
+  box-shadow: 0 0 30px rgba(168, 85, 247, 0.6);
+  transform: translateY(-2px);
+}

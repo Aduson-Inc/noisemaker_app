@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Next.js build
+.next/
+out/
+
+# AWS credentials (never commit)
+.aws/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Vercel
+.vercel
+
+# TypeScript
+tsconfig.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Cache
+.cache/
+*.zip
+
+# Legacy/Backup
+MyNoiseyApp/
+GoldenBuild_Full_Legacy_Backup/
+search_results/
+*.bak
+*.backup
