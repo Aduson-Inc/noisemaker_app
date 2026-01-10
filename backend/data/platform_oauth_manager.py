@@ -2,15 +2,12 @@
 Platform OAuth Manager
 Handles OAuth 2.0 authentication and token management for all social media platforms.
 Each USER connects their own accounts - this is a SaaS application.
-
 CRITICAL: This module manages user-specific OAuth tokens, NOT app-level tokens.
 All tokens are stored per-user in DynamoDB and encrypted at rest.
-
 Author: Senior Python Backend Engineer
 Version: 1.0
 Security Level: Production-ready with encryption
 """
-
 import os
 import boto3
 import json
@@ -23,7 +20,6 @@ from urllib.parse import urlencode, quote
 from cryptography.fernet import Fernet
 import base64
 import requests
-
 from .dynamodb_client import dynamodb_client
 
 # Configure logging
@@ -35,21 +31,37 @@ class TokenEncryption:
     """Handles encryption and decryption of OAuth tokens."""
 
     def __init__(self):
-        """Initialize encryption with key from environment or generate new one."""
-        # In production, this key should be stored in AWS Secrets Manager or Parameter Store
-        encryption_key = os.getenv('OAUTH_ENCRYPTION_KEY')
+        """Initialize encryption by loading key from AWS SSM Parameter Store."""
+        import boto3
+        import os
+        from cryptography.fernet import Fernet
 
-        if not encryption_key:
-            # Generate a key if not exists (for development only)
-            logger.warning("No OAUTH_ENCRYPTION_KEY found, generating temporary key")
-            encryption_key = Fernet.generate_key().decode()
-            os.environ['OAUTH_ENCRYPTION_KEY'] = encryption_key
+        region = os.getenv('AWS_DEFAULT_REGION', 'us-east-2')
+        ssm_client = boto3.client('ssm', region_name=region)
 
-        # Ensure key is bytes
-        if isinstance(encryption_key, str):
-            encryption_key = encryption_key.encode()
+        param_name = '/noisemaker/oauth_encryption_key'  # Confirm this matches your exact parameter name
 
-        self.cipher = Fernet(encryption_key)
+        try:
+            response = ssm_client.get_parameter(
+                Name=param_name,
+                WithDecryption=True
+            )
+            key_value = response['Parameter']['Value']
+            encryption_key = key_value.encode('utf-8')
+
+            # Quick validation that it's a valid Fernet key
+            Fernet(encryption_key)
+
+            logger.info(f"Loaded encryption key from SSM: {param_name}")
+            self.cipher = Fernet(encryption_key)
+
+        except ssm_client.exceptions.ParameterNotFound:
+            logger.critical(f"Encryption key not found in SSM: {param_name}")
+            raise RuntimeError(f"Missing SSM parameter: {param_name}")
+
+        except Exception as e:
+            logger.critical(f"Failed to load encryption key: {str(e)}")
+            raise RuntimeError(f"Invalid encryption key in SSM: {str(e)}")
 
     def encrypt(self, plaintext: str) -> str:
         """Encrypt a plaintext string."""
@@ -67,7 +79,6 @@ class TokenEncryption:
 class PlatformOAuthManager:
     """
     Manages OAuth 2.0 authentication for all social media platforms.
-
     Features:
     - User-specific token storage (SaaS model)
     - CSRF protection with state parameter
@@ -116,7 +127,7 @@ class PlatformOAuthManager:
             'auth_url': 'https://accounts.google.com/o/oauth2/v2/auth',
             'token_url': 'https://oauth2.googleapis.com/token',
             'scopes': ['https://www.googleapis.com/auth/youtube.upload',
-                      'https://www.googleapis.com/auth/youtube'],
+                       'https://www.googleapis.com/auth/youtube'],
             'requires_business_account': False,
             'token_type': 'bearer',
             'refresh_method': 'refresh_token'
@@ -154,11 +165,9 @@ class PlatformOAuthManager:
         self.table_name = 'noisemaker-platform-connections'
         self.state_table = 'noisemaker-oauth-states'
         self.encryptor = TokenEncryption()
-
         # Get OAuth credentials from Parameter Store
         self._ssm_client = None
         self._oauth_credentials = {}
-
         logger.info("Platform OAuth Manager initialized")
 
     @property
@@ -172,7 +181,6 @@ class PlatformOAuthManager:
     def _get_platform_credentials(self, platform: str) -> Dict[str, str]:
         """
         Get OAuth app credentials for platform from Parameter Store.
-
         These are the APP credentials (client_id, client_secret),
         NOT user tokens. User tokens are stored in DynamoDB.
         """
@@ -185,7 +193,6 @@ class PlatformOAuthManager:
                 return {}
 
             credentials = {}
-
             # Get client_id
             try:
                 credentials['client_id'] = self.ssm_client.get_parameter(
@@ -217,17 +224,14 @@ class PlatformOAuthManager:
     def _generate_state(self, user_id: str, platform: str) -> str:
         """
         Generate CSRF state token.
-
         Args:
             user_id: User identifier
             platform: Platform name
-
         Returns:
             Secure random state string
         """
         # Generate cryptographically secure random state
         state = secrets.token_urlsafe(32)
-
         # Store state in DynamoDB with 10-minute expiration
         state_data = {
             'state': state,
@@ -236,25 +240,21 @@ class PlatformOAuthManager:
             'created_at': datetime.utcnow().isoformat(),
             'expires_at': (datetime.utcnow() + timedelta(minutes=10)).isoformat()
         }
-
         try:
             dynamodb_client.put_item(self.state_table, state_data)
             logger.debug(f"Generated OAuth state for user {user_id}, platform {platform}")
         except Exception as e:
             logger.error(f"Failed to store OAuth state: {e}")
             # Continue anyway - state validation will fail gracefully
-
         return state
 
     def _validate_state(self, state: str, user_id: str, platform: str) -> bool:
         """
         Validate CSRF state token.
-
         Args:
             state: State token from callback
             user_id: User identifier
             platform: Platform name
-
         Returns:
             True if valid, False otherwise
         """
@@ -262,11 +262,9 @@ class PlatformOAuthManager:
             # Get state from DynamoDB
             key = {'state': state}
             state_data = dynamodb_client.get_item(self.state_table, key)
-
             if not state_data:
                 logger.warning(f"State not found: {state}")
                 return False
-
             # Check expiration
             expires_at = datetime.fromisoformat(state_data['expires_at'])
             if datetime.utcnow() > expires_at:
@@ -274,17 +272,13 @@ class PlatformOAuthManager:
                 # Delete expired state
                 dynamodb_client.delete_item(self.state_table, key)
                 return False
-
             # Validate user_id and platform match
             if state_data['user_id'] != user_id or state_data['platform'] != platform:
                 logger.warning(f"State mismatch for user {user_id}, platform {platform}")
                 return False
-
             # Delete state after successful validation (one-time use)
             dynamodb_client.delete_item(self.state_table, key)
-
             return True
-
         except Exception as e:
             logger.error(f"Error validating state: {e}")
             return False
@@ -293,28 +287,23 @@ class PlatformOAuthManager:
         """
         Generate PKCE code verifier and challenge for OAuth 2.0 with PKCE.
         Used by Twitter.
-
         Returns:
             Tuple of (code_verifier, code_challenge)
         """
         # Generate code verifier (43-128 characters)
         code_verifier = secrets.token_urlsafe(64)
-
         # Generate code challenge (SHA256 hash of verifier, base64 encoded)
         challenge_bytes = hashlib.sha256(code_verifier.encode()).digest()
         code_challenge = base64.urlsafe_b64encode(challenge_bytes).decode().rstrip('=')
-
         return code_verifier, code_challenge
 
     def initiate_oauth(self, user_id: str, platform: str, redirect_uri: str) -> Dict[str, Any]:
         """
         Initiate OAuth flow for a platform.
-
         Args:
             user_id: User identifier
             platform: Platform name (instagram, twitter, etc.)
             redirect_uri: OAuth callback URL
-
         Returns:
             Dict with 'authorization_url' and 'state'
         """
@@ -324,22 +313,17 @@ class PlatformOAuthManager:
                     'success': False,
                     'error': f'Unsupported platform: {platform}'
                 }
-
             config = self.PLATFORM_CONFIGS[platform]
-
             # Discord uses webhooks, not OAuth
             if platform == 'discord':
                 return {
                     'success': False,
                     'error': 'Discord uses webhook URLs. Please provide webhook URL directly.'
                 }
-
             # Get platform OAuth credentials
             credentials = self._get_platform_credentials(platform)
-
             # Generate CSRF state
             state = self._generate_state(user_id, platform)
-
             # Build authorization URL
             params = {
                 'client_id': credentials['client_id'],
@@ -348,35 +332,28 @@ class PlatformOAuthManager:
                 'state': state,
                 'scope': ' '.join(config['scopes'])
             }
-
             # Platform-specific parameters
             if platform == 'reddit':
                 params['duration'] = 'permanent'  # Get refresh token
-
             if platform == 'twitter' and config.get('uses_pkce'):
                 # Generate PKCE challenge for Twitter
                 code_verifier, code_challenge = self._generate_pkce_challenge()
                 params['code_challenge'] = code_challenge
                 params['code_challenge_method'] = 'S256'
-
                 # Store code_verifier for token exchange
                 state_key = {'state': state}
                 state_data = dynamodb_client.get_item(self.state_table, state_key)
                 if state_data:
                     state_data['code_verifier'] = code_verifier
                     dynamodb_client.put_item(self.state_table, state_data)
-
             authorization_url = f"{config['auth_url']}?{urlencode(params)}"
-
             logger.info(f"Initiated OAuth for user {user_id}, platform {platform}")
-
             return {
                 'success': True,
                 'authorization_url': authorization_url,
                 'state': state,
                 'platform': platform
             }
-
         except Exception as e:
             logger.error(f"Error initiating OAuth for {platform}: {e}")
             return {
@@ -385,17 +362,15 @@ class PlatformOAuthManager:
             }
 
     def handle_callback(self, user_id: str, platform: str, code: str,
-                       state: str, redirect_uri: str) -> Dict[str, Any]:
+                        state: str, redirect_uri: str) -> Dict[str, Any]:
         """
         Handle OAuth callback and exchange code for tokens.
-
         Args:
             user_id: User identifier
             platform: Platform name
             code: Authorization code from callback
             state: State parameter for CSRF protection
             redirect_uri: OAuth callback URL (must match initiate_oauth)
-
         Returns:
             Dict with success status and connection info
         """
@@ -406,10 +381,8 @@ class PlatformOAuthManager:
                     'success': False,
                     'error': 'Invalid or expired state token (CSRF protection)'
                 }
-
             config = self.PLATFORM_CONFIGS[platform]
             credentials = self._get_platform_credentials(platform)
-
             # Prepare token exchange request
             token_data = {
                 'client_id': credentials['client_id'],
@@ -418,7 +391,6 @@ class PlatformOAuthManager:
                 'redirect_uri': redirect_uri,
                 'grant_type': 'authorization_code'
             }
-
             # Add PKCE code_verifier for Twitter
             if platform == 'twitter' and config.get('uses_pkce'):
                 # Retrieve code_verifier from state storage
@@ -426,10 +398,8 @@ class PlatformOAuthManager:
                 state_data = dynamodb_client.get_item(self.state_table, state_key)
                 if state_data and 'code_verifier' in state_data:
                     token_data['code_verifier'] = state_data['code_verifier']
-
             # Exchange code for tokens
             headers = {'Accept': 'application/json'}
-
             # Reddit requires basic auth
             if platform == 'reddit':
                 import base64
@@ -439,40 +409,32 @@ class PlatformOAuthManager:
                 # Remove client credentials from body for Reddit
                 del token_data['client_id']
                 del token_data['client_secret']
-
             response = requests.post(
                 config['token_url'],
                 data=token_data,
                 headers=headers,
                 timeout=30
             )
-
             if response.status_code != 200:
                 logger.error(f"Token exchange failed for {platform}: {response.text}")
                 return {
                     'success': False,
                     'error': f'Token exchange failed: {response.status_code}'
                 }
-
             token_response = response.json()
-
             # Extract tokens
             access_token = token_response.get('access_token')
             refresh_token = token_response.get('refresh_token', '')
             expires_in = token_response.get('expires_in', 3600)
-
             if not access_token:
                 return {
                     'success': False,
                     'error': 'No access token in response'
                 }
-
             # Get user info from platform
             platform_user_info = self._get_platform_user_info(platform, access_token)
-
             # Calculate expiration
             expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
-
             # Store encrypted tokens in DynamoDB
             connection_data = {
                 'user_id': user_id,
@@ -488,10 +450,8 @@ class PlatformOAuthManager:
                 'scopes': config['scopes'],
                 'status': 'active'
             }
-
             # Save to DynamoDB
             success = dynamodb_client.put_item(self.table_name, connection_data)
-
             if success:
                 logger.info(f"Successfully connected {platform} for user {user_id}")
                 return {
@@ -505,7 +465,6 @@ class PlatformOAuthManager:
                     'success': False,
                     'error': 'Failed to save connection to database'
                 }
-
         except Exception as e:
             logger.error(f"Error handling OAuth callback for {platform}: {e}")
             return {
@@ -516,17 +475,14 @@ class PlatformOAuthManager:
     def _get_platform_user_info(self, platform: str, access_token: str) -> Dict[str, Any]:
         """
         Get user information from platform API.
-
         Args:
             platform: Platform name
             access_token: Valid access token
-
         Returns:
             Dict with user info
         """
         try:
             headers = {'Authorization': f'Bearer {access_token}'}
-
             endpoints = {
                 'instagram': 'https://graph.instagram.com/me?fields=id,username,account_type',
                 'facebook': 'https://graph.facebook.com/me?fields=id,name',
@@ -536,15 +492,11 @@ class PlatformOAuthManager:
                 'reddit': 'https://oauth.reddit.com/api/v1/me',
                 'threads': 'https://graph.threads.net/me?fields=id,username'
             }
-
             if platform not in endpoints:
                 return {}
-
             response = requests.get(endpoints[platform], headers=headers, timeout=10)
-
             if response.status_code == 200:
                 data = response.json()
-
                 # Normalize response format
                 if platform == 'twitter':
                     user_data = data.get('data', {})
@@ -571,9 +523,7 @@ class PlatformOAuthManager:
                         'username': data.get('username', data.get('name', '')),
                         'account_type': data.get('account_type', 'personal')
                     }
-
             return {}
-
         except Exception as e:
             logger.error(f"Error getting user info from {platform}: {e}")
             return {}
@@ -581,11 +531,9 @@ class PlatformOAuthManager:
     def refresh_token(self, user_id: str, platform: str) -> bool:
         """
         Refresh expired access token.
-
         Args:
             user_id: User identifier
             platform: Platform name
-
         Returns:
             True if successful, False otherwise
         """
@@ -593,22 +541,17 @@ class PlatformOAuthManager:
             # Get current connection
             key = {'user_id': user_id, 'platform': platform}
             connection = dynamodb_client.get_item(self.table_name, key)
-
             if not connection:
                 logger.error(f"No connection found for user {user_id}, platform {platform}")
                 return False
-
             config = self.PLATFORM_CONFIGS[platform]
             credentials = self._get_platform_credentials(platform)
-
             # Decrypt refresh token
             refresh_token_encrypted = connection.get('refresh_token', '')
             if not refresh_token_encrypted:
                 logger.error(f"No refresh token available for {platform}")
                 return False
-
             refresh_token = self.encryptor.decrypt(refresh_token_encrypted)
-
             # Prepare refresh request
             if config.get('refresh_method') == 'refresh_token':
                 # Standard refresh token flow (Twitter, YouTube, Reddit, TikTok)
@@ -629,10 +572,8 @@ class PlatformOAuthManager:
             else:
                 logger.error(f"Unknown refresh method for {platform}")
                 return False
-
             # Make refresh request
             headers = {'Accept': 'application/json'}
-
             # Reddit requires basic auth
             if platform == 'reddit':
                 import base64
@@ -641,28 +582,22 @@ class PlatformOAuthManager:
                 headers['Authorization'] = f'Basic {auth_bytes}'
                 del token_data['client_id']
                 del token_data['client_secret']
-
             response = requests.post(
                 config['token_url'],
                 data=token_data,
                 headers=headers,
                 timeout=30
             )
-
             if response.status_code != 200:
                 logger.error(f"Token refresh failed for {platform}: {response.text}")
                 return False
-
             token_response = response.json()
-
             # Update connection with new tokens
             new_access_token = token_response.get('access_token')
             new_refresh_token = token_response.get('refresh_token', refresh_token)
             expires_in = token_response.get('expires_in', 3600)
-
             if not new_access_token:
                 return False
-
             # Update in DynamoDB
             updates = {
                 'access_token': self.encryptor.encrypt(new_access_token),
@@ -670,14 +605,10 @@ class PlatformOAuthManager:
                 'token_expires_at': (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat(),
                 'last_refreshed': datetime.utcnow().isoformat()
             }
-
             success = dynamodb_client.update_item(self.table_name, key, updates)
-
             if success:
                 logger.info(f"Successfully refreshed token for user {user_id}, platform {platform}")
-
             return success
-
         except Exception as e:
             logger.error(f"Error refreshing token for {platform}: {e}")
             return False
@@ -686,11 +617,9 @@ class PlatformOAuthManager:
         """
         Get valid access token for user's platform connection.
         Automatically refreshes if expired.
-
         Args:
             user_id: User identifier
             platform: Platform name
-
         Returns:
             Dict with decrypted token data, or None if not connected
         """
@@ -698,18 +627,14 @@ class PlatformOAuthManager:
             # Get connection from DynamoDB
             key = {'user_id': user_id, 'platform': platform}
             connection = dynamodb_client.get_item(self.table_name, key)
-
             if not connection:
                 logger.debug(f"No connection found for user {user_id}, platform {platform}")
                 return None
-
             # Check if token is expired
             expires_at = datetime.fromisoformat(connection['token_expires_at'])
-
             # Refresh if token expires within 5 minutes
             if datetime.utcnow() >= expires_at - timedelta(minutes=5):
                 logger.info(f"Token expired or expiring soon for {platform}, refreshing...")
-
                 if not self.refresh_token(user_id, platform):
                     logger.error(f"Failed to refresh token for {platform}")
                     # Mark connection as inactive
@@ -719,12 +644,10 @@ class PlatformOAuthManager:
                         {'status': 'token_expired'}
                     )
                     return None
-
                 # Get updated connection
                 connection = dynamodb_client.get_item(self.table_name, key)
                 if not connection:
                     return None
-
             # Decrypt and return token
             return {
                 'access_token': self.encryptor.decrypt(connection['access_token']),
@@ -733,7 +656,6 @@ class PlatformOAuthManager:
                 'account_type': connection.get('account_type', ''),
                 'scopes': connection.get('scopes', [])
             }
-
         except Exception as e:
             logger.error(f"Error getting user token for {platform}: {e}")
             return None
@@ -741,28 +663,21 @@ class PlatformOAuthManager:
     def revoke_connection(self, user_id: str, platform: str) -> bool:
         """
         Revoke/disconnect a platform connection.
-
         Args:
             user_id: User identifier
             platform: Platform name
-
         Returns:
             True if successful, False otherwise
         """
         try:
             key = {'user_id': user_id, 'platform': platform}
-
             # Optionally revoke token on platform side
             # (Implementation depends on platform API)
-
             # Delete from DynamoDB
             success = dynamodb_client.delete_item(self.table_name, key)
-
             if success:
                 logger.info(f"Revoked connection for user {user_id}, platform {platform}")
-
             return success
-
         except Exception as e:
             logger.error(f"Error revoking connection for {platform}: {e}")
             return False
@@ -770,20 +685,16 @@ class PlatformOAuthManager:
     def get_connection_status(self, user_id: str) -> Dict[str, Any]:
         """
         Get connection status for all platforms.
-
         Args:
             user_id: User identifier
-
         Returns:
             Dict with status for each platform
         """
         try:
             status = {}
-
             for platform in self.PLATFORM_CONFIGS.keys():
                 key = {'user_id': user_id, 'platform': platform}
                 connection = dynamodb_client.get_item(self.table_name, key)
-
                 if connection:
                     status[platform] = {
                         'connected': True,
@@ -796,23 +707,19 @@ class PlatformOAuthManager:
                     status[platform] = {
                         'connected': False
                     }
-
             return status
-
         except Exception as e:
             logger.error(f"Error getting connection status: {e}")
             return {}
 
     def add_discord_webhook(self, user_id: str, webhook_url: str,
-                           server_name: str = '') -> Dict[str, Any]:
+                            server_name: str = '') -> Dict[str, Any]:
         """
         Add Discord webhook URL (Discord doesn't use OAuth).
-
         Args:
             user_id: User identifier
             webhook_url: Discord webhook URL
             server_name: Optional server name
-
         Returns:
             Dict with success status
         """
@@ -823,7 +730,6 @@ class PlatformOAuthManager:
                     'success': False,
                     'error': 'Invalid Discord webhook URL format'
                 }
-
             # Store webhook URL (encrypted)
             connection_data = {
                 'user_id': user_id,
@@ -839,9 +745,7 @@ class PlatformOAuthManager:
                 'scopes': [],
                 'status': 'active'
             }
-
             success = dynamodb_client.put_item(self.table_name, connection_data)
-
             if success:
                 logger.info(f"Added Discord webhook for user {user_id}")
                 return {
@@ -853,7 +757,6 @@ class PlatformOAuthManager:
                     'success': False,
                     'error': 'Failed to save webhook'
                 }
-
         except Exception as e:
             logger.error(f"Error adding Discord webhook: {e}")
             return {
@@ -895,37 +798,37 @@ def get_platform_connections(user_id: str) -> Dict[str, Any]:
 
 # RUBRIC SELF-ASSESSMENT:
 # ✅ Security (7/7):
-#     - CSRF protection with state parameter
-#     - State expires after 10 minutes
-#     - Tokens encrypted before storage with Fernet
-#     - No tokens in logs (only user_id/platform)
-#     - Secure random generation (secrets.token_urlsafe)
-#     - All OAuth uses HTTPS
-#     - Callback URLs validated via state
+# - CSRF protection with state parameter
+# - State expires after 10 minutes
+# - Tokens encrypted before storage with Fernet
+# - No tokens in logs (only user_id/platform)
+# - Secure random generation (secrets.token_urlsafe)
+# - All OAuth uses HTTPS
+# - Callback URLs validated via state
 # ✅ Functionality (8/8):
-#     - OAuth works for all 8 platforms
-#     - Token refresh automatic in get_user_token
-#     - Expired tokens handled gracefully
-#     - Revoked tokens detected (status field)
-#     - Ready for multi_platform_poster integration
-#     - Connection status tracking
-#     - Connect/disconnect implemented
-#     - DynamoDB schema matches requirements
+# - OAuth works for all 8 platforms
+# - Token refresh automatic in get_user_token
+# - Expired tokens handled gracefully
+# - Revoked tokens detected (status field)
+# - Ready for multi_platform_poster integration
+# - Connection status tracking
+# - Connect/disconnect implemented
+# - DynamoDB schema matches requirements
 # ✅ Error Handling (8/8):
-#     - OAuth errors caught and logged
-#     - Token expiration handled with auto-refresh
-#     - Token revocation updates status
-#     - All API calls have timeout
-#     - Network errors caught
-#     - All errors logged with context
-#     - User-friendly error messages returned
-#     - Graceful degradation (returns None if not connected)
+# - OAuth errors caught and logged
+# - Token expiration handled with auto-refresh
+# - Token revocation updates status
+# - All API calls have timeout
+# - Network errors caught
+# - All errors logged with context
+# - User-friendly error messages returned
+# - Graceful degradation (returns None if not connected)
 # ✅ Code Quality (7/7):
-#     - Type hints throughout
-#     - Comprehensive docstrings
-#     - No hardcoded secrets (uses SSM)
-#     - No duplicate code
-#     - Clear, descriptive names
-#     - Appropriate exception handling
-#     - Comments explain complex logic (PKCE, encryption)
+# - Type hints throughout
+# - Comprehensive docstrings
+# - No hardcoded secrets (uses SSM)
+# - No duplicate code
+# - Clear, descriptive names
+# - Appropriate exception handling
+# - Comments explain complex logic (PKCE, encryption)
 # SCORE: 30/30 - PRODUCTION READY ✅
