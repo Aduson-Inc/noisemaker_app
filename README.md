@@ -12,17 +12,16 @@ Automates social media posting across 8 platforms with auto-generated content an
 - React
 - TypeScript
 - Tailwind CSS
-- Deployed on AWS Amplify
+
 
 **Backend:**
 - FastAPI (Python 3.12)
-- DynamoDB (23 tables)
-- Deployed on AWS Elastic Beanstalk
+- DynamoDB (26 tables)
+
 
 **Infrastructure:**
 - Region: us-east-2 (Ohio)
 - SSL: ACM wildcard certificate
-- DNS: Route 53
 - Authentication: JWT tokens
 - Payment: Stripe (Test mode)
 
@@ -52,20 +51,6 @@ projects/
 - JWT session tokens
 - No user-level Spotify OAuth (app uses its own credentials)
 
-## Deployment
 
-**Frontend:**
-```bash
-git push origin main  # Auto-deploys via Amplify
-```
-
-**Backend:**
-```bash
-cd backend
-eb deploy noisemaker-api-prod
-```
-
-## Environment
-- Development: WSL2 Ubuntu
 - Node: Latest LTS
 - Python: 3.12
