@@ -31,33 +31,10 @@ Before EVERY commit:
 □ Did I run git status to see exactly what's staged?
 □ Do I know what every staged file does?
 
----
-
-## DEPLOYMENT ORDER
-
-**ALWAYS deploy in this order:**
-
-1. **Backend FIRST** (if backend changes exist)
-   - Push to GitHub
-   - GitHub Actions deploys to Elastic Beanstalk
-   - Wait for completion
-   - Verify EB health is Green
-
-2. **Frontend SECOND** (if frontend changes exist)
-   - Push to GitHub
-   - Amplify auto-builds
-   - Wait for build to complete
-   - Verify site loads correctly
-
-3. **NEVER deploy both simultaneously**
-
----
-
-## GIT WORKFLOW
 
 ### Before Committing Frontend:
 ```bash
-cd ~/projects/frontend
+C:\Users\tredev\Desktop\nm_mono\frontend
 npm install              # Always regenerate lock file
 npm run build            # Test build locally FIRST
 git status               # Check what's staged
@@ -67,7 +44,7 @@ git commit -m "message"
 
 ### Before Committing Backend:
 ```bash
-cd ~/projects/backend
+C:\Users\tredev\Desktop\nm_mono\backend
 pip freeze > requirements.txt  # If dependencies changed
 git status
 git add .
@@ -76,14 +53,4 @@ git commit -m "message"
 
 ---
 
-## EMERGENCY CONTACTS
 
-- AWS Console: https://console.aws.amazon.com
-- Amplify: https://us-east-2.console.aws.amazon.com/amplify/apps/dy72ta11223bp
-- EB: https://us-east-2.console.aws.amazon.com/elasticbeanstalk
-- GitHub Actions: https://github.com/tretretretretre/Noi/actions
-
----
-
-**Last Updated:** December 2024
-**Owner:** Tre / ADUSON Inc.

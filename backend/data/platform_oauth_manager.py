@@ -174,7 +174,7 @@ class PlatformOAuthManager:
     def ssm_client(self):
         """Lazy loading of SSM client."""
         if self._ssm_client is None:
-            region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
+            region = os.getenv('AWS_DEFAULT_REGION', 'us-east-2')
             self._ssm_client = boto3.client('ssm', region_name=region)
         return self._ssm_client
 

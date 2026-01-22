@@ -61,7 +61,7 @@ class TestMarketplaceRoutes:
         assert data['success'] is True
         assert data['available_downloads'] == 3
 
-    @patch('marketplace.album_artwork_integration')
+    @patch('marketplace.frank_art_integration')
     def test_download_artwork_success(self, mock_integration):
         """Test POST /api/marketplace/download - successful download"""
         # Mock successful download
@@ -82,7 +82,7 @@ class TestMarketplaceRoutes:
         assert 'download_url' in data
         assert data['remaining_credits'] == 2
 
-    @patch('marketplace.album_artwork_integration')
+    @patch('marketplace.frank_art_integration')
     def test_download_artwork_no_credits(self, mock_integration):
         """Test POST /api/marketplace/download - no credits"""
         # Mock failed download
@@ -121,7 +121,7 @@ class TestMarketplaceRoutes:
         assert data['success'] is True
         assert 'session_id' in data
 
-    @patch('marketplace.album_artwork_integration')
+    @patch('marketplace.frank_art_integration')
     def test_purchase_artwork_success(self, mock_integration):
         """Test POST /api/marketplace/purchase - successful purchase"""
         # Mock successful purchase
@@ -157,7 +157,7 @@ class TestMarketplaceRoutes:
             data = response.json()
             assert data['filter'] == filter_type
 
-    @patch('marketplace.album_artwork_integration')
+    @patch('marketplace.frank_art_integration')
     def test_marketplace_health_check(self, mock_integration):
         """Test GET /api/marketplace/health"""
         # Mock health check

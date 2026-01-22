@@ -166,10 +166,6 @@ s3://noisemakerpromobydoowopp/Milestones/
 | Milestone | Trigger | Video Location | One-Time? |
 |-----------|---------|----------------|-----------|
 | `first_payment` | Stripe payment success | `Milestones/milestone_first_payment/milestone_first_payment.mov` | Yes |
-| `100_streams` | Daily stream check | TBD | Yes |
-| `1000_streams` | Daily stream check | TBD | Yes |
-| `10000_streams` | Daily stream check | TBD | Yes |
-| `25000_streams` | Daily stream check | Custom AI video | Yes |
 
 ### Required Milestone Tracking Fields
 **In `noisemaker-users`:**
@@ -277,7 +273,6 @@ s3://noisemakerpromobydoowopp/Milestones/
 ## FUTURE ENHANCEMENTS
 
 ### Phase 2: Dashboard Stats
-- [ ] Display `baseline_streams_per_day` when calculated
 - [ ] Show Fire Mode status with badge
 - [ ] Display milestone progress bars
 - [ ] Show platform posting status

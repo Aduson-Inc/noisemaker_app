@@ -38,7 +38,7 @@
 
 | Service | Details |
 |---------|---------|
-| DynamoDB | 24 tables, `noisemaker-*` prefix |
+| DynamoDB | 26 tables, `noisemaker-*` prefix |
 | S3 | `noisemakerpromobydoowopp` bucket |
 | Parameter Store | `/noisemaker/*` secrets |
 
@@ -73,10 +73,6 @@
 ## AWS Resources
 
 | Service | Resource Name |
-|---------|---------------|
-| Amplify | dy72ta11223bp (noisemaker-frontend) |
-| Elastic Beanstalk | noisemaker-api-prod |
-| Route 53 | doowopp.com (Zone: Z0578313D3XA99Q8F7F0) |
 | DynamoDB | 24 tables (`noisemaker-*`) |
 | S3 | noisemakerpromobydoowopp |
 | Parameter Store | `/noisemaker/*` (count TBD) |

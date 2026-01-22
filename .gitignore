@@ -36,3 +36,11 @@ GoldenBuild_Full_Legacy_Backup/
 search_results/
 *.bak
 *.backup
+# Claude pollution prevention
+tmpclaude-*
+.claude/
+.claude
+
+# Editor/cache junk
+.vscode/
+backend/.cache/

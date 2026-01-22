@@ -8,7 +8,7 @@ IMPORTANT: Frank Art is SEPARATE from album artwork collected from user songs.
 """
 
 from .frank_art_manager import FrankArtManager, get_frank_art_manager
-from .artwork_analytics import ArtworkAnalyticsManager
+from .artwork_analytics import ArtworkAnalyticsManager, run_unified_nightly_job
 from .frank_art_integration import FrankArtIntegration
 
 # Initialize singleton instances (lazy loaded)
@@ -18,7 +18,6 @@ frank_art_integration = FrankArtIntegration()
 
 # Backwards compatibility aliases
 artwork_manager = frank_art_manager
-album_artwork_integration = frank_art_integration
 AlbumArtworkManager = FrankArtManager
 AlbumArtworkIntegration = FrankArtIntegration
 
@@ -31,9 +30,9 @@ __all__ = [
     'ArtworkAnalyticsManager',
     'FrankArtIntegration',
     'get_frank_art_manager',
+    'run_unified_nightly_job',
     # Backwards compatibility
     'artwork_manager',
-    'album_artwork_integration',
     'AlbumArtworkManager',
     'AlbumArtworkIntegration',
 ]

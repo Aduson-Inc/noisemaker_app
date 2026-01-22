@@ -1,8 +1,5 @@
 # NOISEMAKER Project Handoff Document
-**Last Updated:** December 31, 2025
-**Owner:** Tre (ADUSON Inc.)
-**Business Email:** adusoninc@gmail.com
-**GitHub:** https://github.com/tretretretretre/NoisemakerDev
+
 
 ---
 
@@ -45,7 +42,7 @@ Music promotion SaaS that automates social media posting across 8 platforms for 
 - **Region:** us-east-2 (Ohio)
 
 ### Database & Storage
-- **Database:** AWS DynamoDB (24 tables, all `noisemaker-*` prefix)
+- **Database:** AWS DynamoDB (26 tables, all `noisemaker-*` prefix)
 - **File Storage:** AWS S3
 - **Secrets:** AWS Parameter Store (`/noisemaker/*`)
 
@@ -54,13 +51,10 @@ Music promotion SaaS that automates social media posting across 8 platforms for 
 ## ⚠️ INFRASTRUCTURE STATUS (Dec 31, 2025)
 
 | Service | Status | Reason |
-|---------|--------|--------|
-| EC2 Backend | 🔴 STOPPED | Testing locally until app works end-to-end |
-| Amplify Auto-Build | 🔴 DISABLED | Preventing broken deployments |
 | DynamoDB | 🟢 RUNNING | Needed for local dev |
 | S3 | 🟢 RUNNING | Needed for local dev |
 
-**DO NOT redeploy until app is fully working locally.**
+
 
 ### Local Development
 ```bash
@@ -69,16 +63,7 @@ cd ~/projects/frontend && npm run dev  # → localhost:3000
 
 # Backend
 cd ~/projects/backend && uvicorn main:app --reload  # → localhost:8000
-```
 
-### Environment Variables Required
-```bash
-# Backend (.env or export)
-FRONTEND_URL=http://localhost:3000
-
-# Frontend (.env.local)
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
 
 ---
 
@@ -87,9 +72,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 | Service | Resource | Details |
 |---------|----------|---------|
 | Account ID | 199689305330 | Region: us-east-2 |
-| Elastic Beanstalk | noisemaker-api-prod | Single Instance, Python 3.12 |
-| Amplify | dy72ta11223bp | Next.js SSR, main branch |
-| Route 53 | doowopp.com | Zone: Z0578313D3XA99Q8F7F0 |
 | DynamoDB | noisemaker-* | 24 tables (PAY_PER_REQUEST) |
 | Parameter Store | /noisemaker/* | All secrets |
 

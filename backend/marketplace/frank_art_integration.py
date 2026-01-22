@@ -106,7 +106,7 @@ class FrankArtIntegration:
                 'success': False,
                 'error': f'Signup processing failed: {str(e)}'
             }
-    
+
     def handle_song_upload(self, user_id: str, song_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Handle user song upload and award art tokens.
@@ -155,7 +155,7 @@ class FrankArtIntegration:
                 'success': False,
                 'error': f'Token award failed: {str(e)}'
             }
-    
+
     def get_user_marketplace_status(self, user_id: str) -> Dict[str, Any]:
         """
         Get comprehensive user Frank's Garage status.
@@ -206,7 +206,7 @@ class FrankArtIntegration:
                 'success': False,
                 'error': f'Failed to get marketplace status: {str(e)}'
             }
-    
+
     def handle_artwork_download(self, user_id: str, artwork_id: str) -> Dict[str, Any]:
         """
         Handle FREE artwork download (costs 1 art token).
@@ -244,7 +244,7 @@ class FrankArtIntegration:
                 'success': False,
                 'error': f'Download failed: {str(e)}'
             }
-    
+
     def handle_artwork_purchase(self, user_id: str, artwork_ids: List[str], purchase_type: str) -> Dict[str, Any]:
         """
         Handle PAID artwork purchase (no tokens used).
@@ -283,7 +283,7 @@ class FrankArtIntegration:
                 'success': False,
                 'error': f'Purchase failed: {str(e)}'
             }
-    
+
     def ensure_system_separation(self) -> Dict[str, Any]:
         """
         Verify clean separation between Frank Art (marketplace) and Album Art (Spotify songs).
@@ -337,7 +337,7 @@ class FrankArtIntegration:
                 'success': False,
                 'error': f'Separation check failed: {str(e)}'
             }
-    
+
     def get_integration_health(self) -> Dict[str, Any]:
         """
         Get health status of Frank's Garage marketplace integration.
@@ -385,9 +385,6 @@ class FrankArtIntegration:
 
 # Global integration manager instance
 frank_art_integration = FrankArtIntegration()
-
-# Backwards compatibility alias
-album_artwork_integration = frank_art_integration
 
 
 # Integration hooks for main system
