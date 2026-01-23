@@ -21,9 +21,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import os
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 from io import BytesIO
 import tempfile
 
@@ -572,6 +569,10 @@ class ArtworkAnalyticsManager:
     def _generate_analytics_charts(self) -> Optional[Dict[str, BytesIO]]:
         """Generate analytics charts for email attachment."""
         try:
+            # Lazy import for analytics dependencies (not needed for daily generation)
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+
             charts = {}
 
             # Set style
