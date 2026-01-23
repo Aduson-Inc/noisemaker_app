@@ -32,9 +32,11 @@ jobs:
       - name: Copy application code
         working-directory: backend
         run: |
-          cp -r marketplace lambda_package/
-          cp -r auth lambda_package/
-          cp -r data lambda_package/
+          mkdir -p lambda_package/backend
+          cp -r marketplace lambda_package/backend/
+          cp -r auth lambda_package/backend/
+          cp -r data lambda_package/backend/
+          touch lambda_package/backend/__init__.py
 
       - name: Create deployment package
         working-directory: backend/lambda_package
@@ -54,6 +56,13 @@ jobs:
           aws lambda update-function-code \
             --function-name frank-art-generator \
             --zip-file fileb://frank_art_generator.zip \
+            --region us-east-2
+
+      - name: Update Lambda handler
+        run: |
+          aws lambda update-function-configuration \
+            --function-name frank-art-generator \
+            --handler backend.marketplace.daily_album_art_generator.lambda_handler \
             --region us-east-2
 
       - name: Verify deployment
