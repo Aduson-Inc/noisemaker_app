@@ -58,6 +58,10 @@ jobs:
             --zip-file fileb://frank_art_generator.zip \
             --region us-east-2
 
+          aws lambda wait function-updated \
+            --function-name frank-art-generator \
+            --region us-east-2
+
       - name: Update Lambda handler
         run: |
           aws lambda update-function-configuration \
