@@ -1,6 +1,6 @@
 """
-SDXL Album Artwork Generator Plugin System
-Interchangeable AI image generation system for album artwork creation.
+SDXL Frank Art Generator Plugin System
+Interchangeable AI image generation system for Frank Art creation.
 Uses Stable Diffusion XL for local cost-free generation.
 
 Author: Senior Python Backend Engineer
@@ -91,7 +91,7 @@ class ArtworkGeneratorPlugin(ABC):
 class SDXLArtworkGenerator(ArtworkGeneratorPlugin):
     """
     Stable Diffusion XL artwork generator plugin.
-    Provides cost-free local image generation for album artwork.
+    Provides cost-free local image generation for Frank Art.
     """
 
     def __init__(self):
@@ -154,7 +154,7 @@ class SDXLArtworkGenerator(ArtworkGeneratorPlugin):
 
     def generate_artwork(self, request: GenerationRequest) -> List[str]:
         """
-        Generate album artwork using SDXL.
+        Generate Frank Art using SDXL.
 
         Args:
             request (GenerationRequest): Generation parameters
@@ -300,7 +300,7 @@ class SDXLArtworkGenerator(ArtworkGeneratorPlugin):
 
         except Exception as e:
             logger.error(f"Error building prompt: {str(e)}")
-            return "album artwork, music cover art, masterpiece, best quality"
+            return "Frank Art, music cover art, masterpiece, best quality"
 
     def _get_style_prompt(self, style_id: str) -> str:
         """Get style-specific prompt."""
@@ -315,7 +315,7 @@ class SDXLArtworkGenerator(ArtworkGeneratorPlugin):
             'style_7': 'generate a graphic image in the style of <PLACEHOLDER_7>\'s artwork'
         }
 
-        return style_prompts.get(style_id, 'generate a graphic image in album artwork style')
+        return style_prompts.get(style_id, 'generate a graphic image in Frank Art style')
 
     def _get_color_scheme(self, color_scheme_id: str) -> Optional[ColorScheme]:
         """Get color scheme by ID."""

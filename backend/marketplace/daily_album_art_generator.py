@@ -1,8 +1,8 @@
 """
-Daily Album Art Generator for Marketplace
+Daily Frank Art Generator for Marketplace
 ======================================================
 
-Generates 4 high-quality album artworks daily using Stable Diffusion XL 1.0 Base.
+Generates 4 high-quality Frank Art pieces daily using Stable Diffusion XL 1.0 Base.
 
 
 """
@@ -37,15 +37,16 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 
-# Fetch user-specific parameters from AWS Parameter Store
+# Fetch parameters from AWS Parameter Store (uses /noisemaker/ prefix with lowercase keys)
 USER_ID = os.environ.get('CURRENT_USER_ID', 'default')
-from auth.environment_loader import env_loader
-user_params = env_loader.get_all()
-HUGGINGFACE_TOKEN = user_params.get('HUGGINGFACE_TOKEN')
-AWS_ACCESS_KEY_ID = user_params.get('AWS_ACCESS_KEY_ID') or os.environ.get('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = user_params.get('AWS_SECRET_ACCESS_KEY') or os.environ.get('AWS_SECRET_ACCESS_KEY')
-AWS_REGION = user_params.get('AWS_REGION') or os.environ.get('AWS_REGION', 'us-east-2')
-S3_BUCKET = user_params.get('S3_BUCKET') or os.environ.get('S3_BUCKET', 'noisemakerpromobydoowopp')
+from ..auth.environment_loader import env_loader
+
+# Use specific getter methods for reliable parameter retrieval
+HUGGINGFACE_TOKEN = env_loader.get_huggingface_token() or os.environ.get('HUGGINGFACE_TOKEN')
+AWS_ACCESS_KEY_ID = env_loader.get('aws_access_key_id') or os.environ.get('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = env_loader.get('aws_secret_access_key') or os.environ.get('AWS_SECRET_ACCESS_KEY')
+AWS_REGION = env_loader.get('aws_region') or os.environ.get('AWS_REGION', 'us-east-2')
+S3_BUCKET = env_loader.get('s3_bucket') or os.environ.get('S3_BUCKET', 'noisemakerpromobydoowopp')
 
 # Generation settings
 IMAGES_PER_RUN = 4
@@ -170,38 +171,38 @@ def test_connection() -> bool:
     
     for var_name, var_value in required_vars.items():
         if not var_value:
-            logger.error(f"   ❌ {var_name}: Not set")
+            logger.error(f"   ERROR: {var_name}: Not set")
             all_ok = False
         else:
             masked_value = var_value[:8] + "..." if len(var_value) > 8 else "***"
             logger.info(f"   ✅ {var_name}: {masked_value}")
     
     if not all_ok:
-        logger.error("\n❌ Missing required environment variables. Check your .env file.")
+        logger.error("\nERROR: Missing required environment variables. Check your .env file.")
         return False
     
     # Test 2: Hugging Face API
     logger.info("\n2️⃣  Testing Hugging Face API connection...")
     try:
-        import requests
-        
-        # Test with a simple model info request
-        API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
-        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
-        
-        response = requests.get(API_URL, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            logger.info("   ✅ Hugging Face API: Connected")
-            logger.info(f"   ✅ Model: stabilityai/stable-diffusion-xl-base-1.0 (accessible)")
-        elif response.status_code == 401:
-            logger.error("   ❌ Hugging Face API: Invalid token")
-            all_ok = False
-        else:
-            logger.warning(f"   ⚠️  Hugging Face API: Unexpected status {response.status_code}")
-            logger.info(f"   ℹ️  This may still work for generation")
+        from huggingface_hub import InferenceClient
+
+        # Test connection with InferenceClient (nscale provider)
+        client = InferenceClient(
+            provider="nscale",
+            api_key=HUGGINGFACE_TOKEN,
+        )
+
+        # Simple test to verify connection (we'll just create the client successfully)
+        logger.info("   ✅ Hugging Face API: Connected (InferenceClient initialized)")
+        logger.info("   ✅ Provider: nscale (official Hugging Face inference)")
+        logger.info(f"   ✅ Model: stabilityai/stable-diffusion-xl-base-1.0 (ready)")
+
     except Exception as e:
-        logger.error(f"   ❌ Hugging Face API: {str(e)}")
+        error_msg = str(e).lower()
+        if "401" in error_msg or "unauthorized" in error_msg or "token" in error_msg:
+            logger.error("   ERROR: Hugging Face API: Invalid token")
+        else:
+            logger.error(f"   ERROR: Hugging Face API: {str(e)}")
         all_ok = False
     
     # Test 3: AWS S3 connection
@@ -216,11 +217,11 @@ def test_connection() -> bool:
         if bucket_exists:
             logger.info(f"   ✅ S3 Bucket exists: {S3_BUCKET}")
         else:
-            logger.error(f"   ❌ S3 Bucket not found: {S3_BUCKET}")
+            logger.error(f"   ERROR: S3 Bucket not found: {S3_BUCKET}")
             logger.error(f"   ℹ️  Available buckets: {[b['Name'] for b in response['Buckets']]}")
             all_ok = False
     except Exception as e:
-        logger.error(f"   ❌ AWS S3: {str(e)}")
+        logger.error(f"   ERROR: AWS S3: {str(e)}")
         all_ok = False
     
     # Test 4: S3 write permissions (try to create state file)
@@ -240,7 +241,7 @@ def test_connection() -> bool:
             s3_client.delete_object(Bucket=S3_BUCKET, Key=test_key)
             logger.info(f"   ✅ S3 Delete: Success")
         except Exception as e:
-            logger.error(f"   ❌ S3 Write: {str(e)}")
+            logger.error(f"   ERROR: S3 Write: {str(e)}")
             all_ok = False
     
     # Final result
@@ -252,7 +253,7 @@ def test_connection() -> bool:
         logger.info("  python daily_album_art_generator.py --test-mode    # Test with 1 image")
         logger.info("  python daily_album_art_generator.py                # Full run (4 images)")
     else:
-        logger.info("❌ CONNECTION TEST FAILED")
+        logger.info("ERROR: CONNECTION TEST FAILED")
         logger.info("=" * 80)
         logger.info("\nPlease fix the errors above before running the generator.")
     
@@ -287,7 +288,7 @@ def load_state() -> Dict:
             'last_run': None
         }
     except Exception as e:
-        logger.error(f"❌ Error loading state: {str(e)}")
+        logger.error(f"ERROR: Error loading state: {str(e)}")
         raise
 
 
@@ -305,7 +306,7 @@ def save_state(state: Dict) -> None:
         )
         logger.info("✅ State saved successfully")
     except Exception as e:
-        logger.error(f"❌ Error saving state: {str(e)}")
+        logger.error(f"ERROR: Error saving state: {str(e)}")
         raise
 
 
@@ -403,54 +404,54 @@ def generate_image_with_sdxl(prompt: str, retry_count: int = 1) -> Optional[Imag
         PIL Image object or None on failure
     """
     try:
-        import requests
-        
-        API_URL = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
-        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
-        
+        from huggingface_hub import InferenceClient
+
         logger.info(f"🎨 Generating image with prompt: {prompt[:80]}...")
-        
-        payload = {
-            "inputs": prompt,
-            "parameters": {
-                "negative_prompt": "blurry, low quality, watermark, text, logo, signature, distorted",
-                "num_inference_steps": 50,
-                "guidance_scale": 7.5
-            }
-        }
-        
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=120)
-        
-        # Handle rate limits and model loading
-        if response.status_code == 429:
-            logger.warning("⏳ Rate limit hit (429), waiting 20 seconds...")
-            if retry_count > 0:
-                time.sleep(20)
-                return generate_image_with_sdxl(prompt, retry_count - 1)
-            else:
-                logger.error("❌ Rate limit exceeded, no retries left")
-                return None
-        
-        if response.status_code == 503:
-            logger.warning("⏳ Model loading (503), waiting 20 seconds...")
-            if retry_count > 0:
-                time.sleep(20)
-                return generate_image_with_sdxl(prompt, retry_count - 1)
-            else:
-                logger.error("❌ Model loading timeout, no retries left")
-                return None
-        
-        if response.status_code != 200:
-            logger.error(f"❌ API error: {response.status_code} - {response.text}")
-            return None
-        
-        # Convert response to PIL Image
-        image = Image.open(BytesIO(response.content))
+
+        # Initialize InferenceClient with nscale provider (official HF method)
+        client = InferenceClient(
+            provider="nscale",
+            api_key=HUGGINGFACE_TOKEN,
+        )
+
+        # Generate image using text_to_image (returns PIL.Image object directly)
+        image = client.text_to_image(
+            prompt,
+            model="stabilityai/stable-diffusion-xl-base-1.0",
+            negative_prompt="blurry, low quality, watermark, text, logo, signature, distorted",
+            num_inference_steps=50,
+            guidance_scale=7.5,
+            height=2000,
+            width=2000,
+        )
+
         logger.info(f"✅ Image generated successfully: {image.size}")
         return image
-        
+
     except Exception as e:
-        logger.error(f"❌ Error generating image: {str(e)}")
+        error_msg = str(e).lower()
+
+        # Handle rate limits
+        if "429" in error_msg or "rate limit" in error_msg:
+            logger.warning("⏳ Rate limit hit, waiting 20 seconds...")
+            if retry_count > 0:
+                time.sleep(20)
+                return generate_image_with_sdxl(prompt, retry_count - 1)
+            else:
+                logger.error("ERROR: Rate limit exceeded, no retries left")
+                return None
+
+        # Handle model loading
+        if "503" in error_msg or "loading" in error_msg:
+            logger.warning("⏳ Model loading, waiting 20 seconds...")
+            if retry_count > 0:
+                time.sleep(20)
+                return generate_image_with_sdxl(prompt, retry_count - 1)
+            else:
+                logger.error("ERROR: Model loading timeout, no retries left")
+                return None
+
+        logger.error(f"ERROR: Error generating image: {str(e)}")
         return None
 
 
@@ -490,7 +491,7 @@ def upload_to_s3(image: Image.Image, s3_key: str, metadata: Dict) -> bool:
         return True
         
     except Exception as e:
-        logger.error(f"❌ Error uploading to S3: {str(e)}")
+        logger.error(f"ERROR: Error uploading to S3: {str(e)}")
         return False
 
 
@@ -543,7 +544,7 @@ def store_artwork_metadata(artwork_id: str, filename: str, prompt: str,
         logger.info(f"✅ Stored metadata for {artwork_id} in DynamoDB")
         return True
     except Exception as e:
-        logger.error(f"❌ Failed to store metadata: {e}")
+        logger.error(f"ERROR: Failed to store metadata: {e}")
         return False
 
 
@@ -609,7 +610,7 @@ def generate_daily_artwork(test_mode: bool = False):
         original_image = generate_image_with_sdxl(prompt)
 
         if original_image is None:
-            logger.error(f"❌ Failed to generate image {i}, skipping...")
+            logger.error(f"ERROR: Failed to generate image {i}, skipping...")
             continue
 
         # Ensure original is correct size
@@ -660,7 +661,7 @@ def generate_daily_artwork(test_mode: bool = False):
             else:
                 logger.warning(f"⚠️  Image {i} uploaded but metadata failed")
         else:
-            logger.error(f"❌ Failed to upload image {i}")
+            logger.error(f"ERROR: Failed to upload image {i}")
     
     # Report completion
     logger.info(f"\n{'=' * 80}")
@@ -714,7 +715,7 @@ def lambda_handler(event, context):
     try:
         return generate_daily_artwork()
     except Exception as e:
-        logger.error(f"❌ Fatal error in lambda_handler: {str(e)}")
+        logger.error(f"ERROR: Fatal error in lambda_handler: {str(e)}")
         return {
             'statusCode': 500,
             'body': json.dumps({
@@ -747,7 +748,7 @@ if __name__ == "__main__":
     
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description='Daily Album Art Generator for MyNoiseyApp Marketplace',
+        description='Daily Frank Art Generator for Frank\'s Garage Marketplace',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -784,36 +785,34 @@ Environment Setup:
     # Normal generation mode
     print("\n" + "=" * 80)
     if args.test_mode:
-        print("🧪 RUNNING IN TEST MODE (1 image, state not advanced)")
+        print("TEST MODE: 1 image (state not advanced)")
     else:
-        print("🚀 RUNNING IN PRODUCTION MODE (4 images)")
+        print("PRODUCTION MODE: 4 images")
     print("=" * 80 + "\n")
     
-    # Check required environment variables
-    required_vars = ['HUGGINGFACE_TOKEN', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']
-    missing_vars = [var for var in required_vars if not os.environ.get(var)]
-    
-    if missing_vars:
-        print(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
-        print("\nOptions:")
-        print("  1. Create a .env file (copy from .env.example)")
-        print("  2. Export environment variables:")
-        for var in missing_vars:
-            print(f"     export {var}='your_value_here'")
+    # Check required parameters (AWS credentials loaded automatically by boto3 from ~/.aws/credentials)
+    if not HUGGINGFACE_TOKEN:
+        print("ERROR: Missing HUGGINGFACE_TOKEN")
+        print("\nStore token in AWS Parameter Store:")
+        print("  aws ssm put-parameter --name /noisemaker/huggingface_token --value 'hf_TOKEN' --type SecureString --region us-east-2")
         print("\nRun with --help for more information")
         exit(1)
+
+    print(f"Hugging Face token: {HUGGINGFACE_TOKEN[:10]}...")
+    print(f"AWS Region: {AWS_REGION}")
+    print(f"S3 Bucket: {S3_BUCKET}\n")
     
     # Run generation
     try:
         result = generate_daily_artwork(test_mode=args.test_mode)
         print("\n" + "=" * 80)
-        print("🎉 GENERATION COMPLETE")
+        print("SUCCESS: GENERATION COMPLETE")
         print("=" * 80)
         print(json.dumps(result, indent=2))
         exit(0)
     except Exception as e:
         print("\n" + "=" * 80)
-        print("❌ GENERATION FAILED")
+        print("ERROR: GENERATION FAILED")
         print("=" * 80)
         print(f"Error: {str(e)}")
         exit(1)

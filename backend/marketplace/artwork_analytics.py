@@ -54,7 +54,7 @@ class SystemAlert:
 
 class ArtworkAnalyticsManager:
     """
-    Comprehensive analytics and notifications system for album artwork marketplace.
+    Comprehensive analytics and notifications system for Frank's Garage marketplace.
 
     Features:
     - Pool utilization tracking
@@ -547,7 +547,7 @@ class ArtworkAnalyticsManager:
                 </div>
 
                 <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6; font-size: 12px; color: #6c757d;">
-                    <p>This is an automated notification from the Spotify Promo Album Artwork Marketplace system.</p>
+                    <p>This is an automated notification from the Frank's Garage Marketplace system.</p>
                     <p>Alert ID: {alert.alert_id}</p>
                 </div>
             </div>

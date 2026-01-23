@@ -15,20 +15,20 @@ import logging
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 
-# Local imports
-from marketplace.frank_art_manager import (
+# Local imports (relative imports for production package structure)
+from .frank_art_manager import (
     get_frank_art_manager,
     get_frank_art_pool,
     place_frank_art_hold,
     download_frank_art_free,
     purchase_frank_art
 )
-from marketplace.artwork_analytics import (
+from .artwork_analytics import (
     analytics_manager,
     track_user_action,
     track_marketplace_metrics
 )
-from data.user_manager import (
+from ..data.user_manager import (
     UserManager,
     init_user_art_tokens,
     award_art_tokens_for_song,

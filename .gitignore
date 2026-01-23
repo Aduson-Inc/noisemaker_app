@@ -44,3 +44,5 @@ tmpclaude-*
 # Editor/cache junk
 .vscode/
 backend/.cache/
+backend/lambda_package/
+output.json

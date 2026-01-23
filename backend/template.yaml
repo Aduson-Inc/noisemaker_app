@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Frank's Garage - Daily AI Art Generation System
+
+Globals:
+  Function:
+    Timeout: 300
+    MemorySize: 256
+    Runtime: python3.12
+    Environment:
+      Variables:
+        AWS_REGION: us-east-2
+        S3_BUCKET: noisemakerpromobydoowopp
+
+Resources:
+  FrankArtGeneratorFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: python3.12
+    Properties:
+      FunctionName: frank-art-generator
+      CodeUri: .
+      Handler: marketplace.daily_album_art_generator.lambda_handler
+      Description: Generates 4 AI artworks daily for Frank's Garage marketplace
+      Timeout: 300
+      MemorySize: 256
+      Architectures:
+        - x86_64
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:PutObjectAcl
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - arn:aws:s3:::noisemakerpromobydoowopp
+                - arn:aws:s3:::noisemakerpromobydoowopp/*
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+                - dynamodb:Query
+                - dynamodb:Scan
+              Resource:
+                - arn:aws:dynamodb:us-east-2:*:table/noisemaker-frank-art
+                - arn:aws:dynamodb:us-east-2:*:table/noisemaker-artwork-holds
+                - arn:aws:dynamodb:us-east-2:*:table/noisemaker-frank-art-purchases
+                - arn:aws:dynamodb:us-east-2:*:table/noisemaker-artwork-analytics
+                - arn:aws:dynamodb:us-east-2:*:table/noisemaker-system-alerts
+                - arn:aws:dynamodb:us-east-2:*:table/noisemaker-users
+                - arn:aws:dynamodb:us-east-2:*:table/noisemaker-artwork-cleanup
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+              Resource:
+                - arn:aws:ssm:us-east-2:*:parameter/noisemaker/*
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: arn:aws:logs:us-east-2:*:*
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 21 * * ? *)
+            Name: frank-art-daily-generation
+            Description: Triggers Frank Art generation daily at 9 PM UTC
+            Enabled: true
+
+Outputs:
+  FrankArtGeneratorFunction:
+    Description: Frank Art Generator Lambda Function ARN
+    Value: !GetAtt FrankArtGeneratorFunction.Arn
+
+  FrankArtGeneratorFunctionIamRole:
+    Description: IAM Role for Lambda Function
+    Value: !GetAtt FrankArtGeneratorFunctionRole.Arn
+
+  DailyScheduleRule:
+    Description: EventBridge Rule for Daily Generation
+    Value: !Ref FrankArtGeneratorFunctionDailySchedule
