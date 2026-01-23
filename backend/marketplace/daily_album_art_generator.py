@@ -43,8 +43,9 @@ from ..auth.environment_loader import env_loader
 
 # Use specific getter methods for reliable parameter retrieval
 HUGGINGFACE_TOKEN = env_loader.get_huggingface_token() or os.environ.get('HUGGINGFACE_TOKEN')
-AWS_ACCESS_KEY_ID = env_loader.get('aws_access_key_id') or os.environ.get('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = env_loader.get('aws_secret_access_key') or os.environ.get('AWS_SECRET_ACCESS_KEY')
+# AWS credentials are optional - Lambda uses IAM role, local uses Parameter Store or env vars
+AWS_ACCESS_KEY_ID = env_loader.get('aws_access_key_id') or os.environ.get('AWS_ACCESS_KEY_ID') or None
+AWS_SECRET_ACCESS_KEY = env_loader.get('aws_secret_access_key') or os.environ.get('AWS_SECRET_ACCESS_KEY') or None
 AWS_REGION = env_loader.get('aws_region') or os.environ.get('AWS_REGION', 'us-east-2')
 S3_BUCKET = env_loader.get('s3_bucket') or os.environ.get('S3_BUCKET', 'noisemakerpromobydoowopp')
 
@@ -137,12 +138,14 @@ BRIGHT_COLORS = [
 # S3 CLIENT INITIALIZATION
 # ============================================================================
 
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-    region_name=AWS_REGION
-)
+# Create S3 client (credentials optional - uses IAM role in Lambda)
+s3_client_kwargs = {'region_name': AWS_REGION}
+if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+    s3_client_kwargs.update({
+        'aws_access_key_id': AWS_ACCESS_KEY_ID,
+        'aws_secret_access_key': AWS_SECRET_ACCESS_KEY
+    })
+s3_client = boto3.client('s3', **s3_client_kwargs)
 
 
 # ============================================================================
