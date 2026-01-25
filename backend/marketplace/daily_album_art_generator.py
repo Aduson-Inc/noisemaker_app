@@ -37,17 +37,53 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 
-# Fetch parameters from AWS Parameter Store (uses /noisemaker/ prefix with lowercase keys)
-USER_ID = os.environ.get('CURRENT_USER_ID', 'default')
-from ..auth.environment_loader import env_loader
+# Configuration - Lambda uses IAM role for AWS, SSM for secrets
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-2')
+S3_BUCKET = os.environ.get('S3_BUCKET', 'noisemakerpromobydoowopp')
 
-# Use specific getter methods for reliable parameter retrieval
-HUGGINGFACE_TOKEN = env_loader.get_huggingface_token() or os.environ.get('HUGGINGFACE_TOKEN')
-# AWS credentials are optional - Lambda uses IAM role, local uses Parameter Store or env vars
-AWS_ACCESS_KEY_ID = env_loader.get('aws_access_key_id') or os.environ.get('AWS_ACCESS_KEY_ID') or None
-AWS_SECRET_ACCESS_KEY = env_loader.get('aws_secret_access_key') or os.environ.get('AWS_SECRET_ACCESS_KEY') or None
-AWS_REGION = env_loader.get('aws_region') or os.environ.get('AWS_REGION', 'us-east-2')
-S3_BUCKET = env_loader.get('s3_bucket') or os.environ.get('S3_BUCKET', 'noisemakerpromobydoowopp')
+# HuggingFace token - loaded lazily from SSM Parameter Store
+_huggingface_token_cache = None
+
+
+def get_huggingface_token() -> str:
+    """
+    Fetch HuggingFace token from AWS SSM Parameter Store.
+    Uses IAM role credentials (no explicit AWS keys needed).
+    Token is cached after first fetch for performance.
+
+    Returns:
+        str: HuggingFace API token
+
+    Raises:
+        Exception: If token cannot be retrieved from SSM
+    """
+    global _huggingface_token_cache
+
+    # Return cached token if available
+    if _huggingface_token_cache:
+        return _huggingface_token_cache
+
+    # Check for environment variable first (for local testing)
+    env_token = os.environ.get('HUGGINGFACE_TOKEN')
+    if env_token:
+        logger.info("✅ Using HuggingFace token from environment variable")
+        _huggingface_token_cache = env_token
+        return _huggingface_token_cache
+
+    # Fetch from SSM Parameter Store
+    try:
+        logger.info("🔑 Fetching HuggingFace token from SSM...")
+        ssm_client = boto3.client('ssm', region_name=AWS_REGION)
+        response = ssm_client.get_parameter(
+            Name='/noisemaker/huggingface_token',
+            WithDecryption=True
+        )
+        _huggingface_token_cache = response['Parameter']['Value']
+        logger.info("✅ HuggingFace token loaded from SSM")
+        return _huggingface_token_cache
+    except Exception as e:
+        logger.error(f"❌ Failed to get HuggingFace token from SSM: {e}")
+        raise Exception(f"Cannot retrieve HuggingFace token from SSM: {e}")
 
 # Generation settings
 IMAGES_PER_RUN = 4
@@ -138,129 +174,9 @@ BRIGHT_COLORS = [
 # S3 CLIENT INITIALIZATION
 # ============================================================================
 
-# Create S3 client (credentials optional - uses IAM role in Lambda)
-s3_client_kwargs = {'region_name': AWS_REGION}
-if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
-    s3_client_kwargs.update({
-        'aws_access_key_id': AWS_ACCESS_KEY_ID,
-        'aws_secret_access_key': AWS_SECRET_ACCESS_KEY
-    })
-s3_client = boto3.client('s3', **s3_client_kwargs)
-
-
-# ============================================================================
-# CONNECTION TESTING
-# ============================================================================
-
-def test_connection() -> bool:
-    """
-    Test connections to Hugging Face API and AWS S3.
-    Returns True if all connections successful, False otherwise.
-    """
-    logger.info("=" * 80)
-    logger.info("🔌 TESTING CONNECTIONS")
-    logger.info("=" * 80)
-    
-    all_ok = True
-    
-    # Test 1: Check environment variables
-    logger.info("\n1️⃣  Checking environment variables...")
-    required_vars = {
-        'HUGGINGFACE_TOKEN': HUGGINGFACE_TOKEN,
-        'AWS_ACCESS_KEY_ID': AWS_ACCESS_KEY_ID,
-        'AWS_SECRET_ACCESS_KEY': AWS_SECRET_ACCESS_KEY,
-        'S3_BUCKET': S3_BUCKET
-    }
-    
-    for var_name, var_value in required_vars.items():
-        if not var_value:
-            logger.error(f"   ERROR: {var_name}: Not set")
-            all_ok = False
-        else:
-            masked_value = var_value[:8] + "..." if len(var_value) > 8 else "***"
-            logger.info(f"   ✅ {var_name}: {masked_value}")
-    
-    if not all_ok:
-        logger.error("\nERROR: Missing required environment variables. Check your .env file.")
-        return False
-    
-    # Test 2: Hugging Face API
-    logger.info("\n2️⃣  Testing Hugging Face API connection...")
-    try:
-        from huggingface_hub import InferenceClient
-
-        # Test connection with InferenceClient (nscale provider)
-        client = InferenceClient(
-            provider="nscale",
-            api_key=HUGGINGFACE_TOKEN,
-        )
-
-        # Simple test to verify connection (we'll just create the client successfully)
-        logger.info("   ✅ Hugging Face API: Connected (InferenceClient initialized)")
-        logger.info("   ✅ Provider: nscale (official Hugging Face inference)")
-        logger.info(f"   ✅ Model: stabilityai/stable-diffusion-xl-base-1.0 (ready)")
-
-    except Exception as e:
-        error_msg = str(e).lower()
-        if "401" in error_msg or "unauthorized" in error_msg or "token" in error_msg:
-            logger.error("   ERROR: Hugging Face API: Invalid token")
-        else:
-            logger.error(f"   ERROR: Hugging Face API: {str(e)}")
-        all_ok = False
-    
-    # Test 3: AWS S3 connection
-    logger.info("\n3️⃣  Testing AWS S3 connection...")
-    try:
-        # List buckets to test credentials
-        response = s3_client.list_buckets()
-        logger.info(f"   ✅ AWS S3 Access: Connected ({len(response['Buckets'])} buckets)")
-        
-        # Check if our specific bucket exists
-        bucket_exists = any(b['Name'] == S3_BUCKET for b in response['Buckets'])
-        if bucket_exists:
-            logger.info(f"   ✅ S3 Bucket exists: {S3_BUCKET}")
-        else:
-            logger.error(f"   ERROR: S3 Bucket not found: {S3_BUCKET}")
-            logger.error(f"   ℹ️  Available buckets: {[b['Name'] for b in response['Buckets']]}")
-            all_ok = False
-    except Exception as e:
-        logger.error(f"   ERROR: AWS S3: {str(e)}")
-        all_ok = False
-    
-    # Test 4: S3 write permissions (try to create state file)
-    if all_ok:
-        logger.info("\n4️⃣  Testing S3 write permissions...")
-        try:
-            test_key = f"album-art/connection-test-{int(time.time())}.txt"
-            s3_client.put_object(
-                Bucket=S3_BUCKET,
-                Key=test_key,
-                Body=b"Connection test",
-                ContentType='text/plain'
-            )
-            logger.info(f"   ✅ S3 Write: Success")
-            
-            # Clean up test file
-            s3_client.delete_object(Bucket=S3_BUCKET, Key=test_key)
-            logger.info(f"   ✅ S3 Delete: Success")
-        except Exception as e:
-            logger.error(f"   ERROR: S3 Write: {str(e)}")
-            all_ok = False
-    
-    # Final result
-    logger.info("\n" + "=" * 80)
-    if all_ok:
-        logger.info("✅ ALL CONNECTIONS SUCCESSFUL!")
-        logger.info("=" * 80)
-        logger.info("\nYou're ready to generate artwork! Run:")
-        logger.info("  python daily_album_art_generator.py --test-mode    # Test with 1 image")
-        logger.info("  python daily_album_art_generator.py                # Full run (4 images)")
-    else:
-        logger.info("ERROR: CONNECTION TEST FAILED")
-        logger.info("=" * 80)
-        logger.info("\nPlease fix the errors above before running the generator.")
-    
-    return all_ok
+# S3 client - uses IAM role credentials automatically in Lambda
+# No explicit credentials needed; boto3 uses default credential chain
+s3_client = boto3.client('s3', region_name=AWS_REGION)
 
 
 # ============================================================================
@@ -398,11 +314,11 @@ def sanitize_filename(text: str) -> str:
 def generate_image_with_sdxl(prompt: str, retry_count: int = 1) -> Optional[Image.Image]:
     """
     Generate image using Hugging Face SDXL API.
-    
+
     Args:
         prompt: Text prompt for generation
         retry_count: Number of retries on rate limit/loading errors
-    
+
     Returns:
         PIL Image object or None on failure
     """
@@ -411,10 +327,13 @@ def generate_image_with_sdxl(prompt: str, retry_count: int = 1) -> Optional[Imag
 
         logger.info(f"🎨 Generating image with prompt: {prompt[:80]}...")
 
+        # Get HuggingFace token from SSM (cached after first call)
+        token = get_huggingface_token()
+
         # Initialize InferenceClient with nscale provider (official HF method)
         client = InferenceClient(
             provider="nscale",
-            api_key=HUGGINGFACE_TOKEN,
+            api_key=token,
         )
 
         # Generate image using text_to_image (returns PIL.Image object directly)
@@ -735,56 +654,49 @@ def lambda_handler(event, context):
 if __name__ == "__main__":
     """
     Run locally with command line arguments.
-    
+
     Usage:
-        python daily_album_art_generator.py                    # Full run (4 images)
-        python daily_album_art_generator.py --test-mode        # Test run (1 image)
-        python daily_album_art_generator.py --test-connection  # Test API/AWS access
-    
-    Environment variables (set in .env or export):
-        HUGGINGFACE_TOKEN="hf_..."
-        AWS_ACCESS_KEY_ID="..."
-        AWS_SECRET_ACCESS_KEY="..."
-        AWS_REGION="us-east-2"
-        S3_BUCKET="mynoiseyapp-marketplace"
+        python daily_album_art_generator.py              # Full run (4 images)
+        python daily_album_art_generator.py --test-mode  # Test run (1 image)
+
+    Environment variables for local testing:
+        HUGGINGFACE_TOKEN="hf_..."   # Required for local, or fetched from SSM in Lambda
+        AWS_REGION="us-east-2"       # Optional, defaults to us-east-2
+        S3_BUCKET="bucket-name"      # Optional, defaults to noisemakerpromobydoowopp
+
+    AWS credentials for local testing:
+        Configure via ~/.aws/credentials or environment variables
+        In Lambda, IAM role is used automatically
     """
-    
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description='Daily Frank Art Generator for Frank\'s Garage Marketplace',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python daily_album_art_generator.py                    # Generate 4 images (full run)
-  python daily_album_art_generator.py --test-mode        # Generate 1 image (test)
-  python daily_album_art_generator.py --test-connection  # Verify API/AWS access
+  python daily_album_art_generator.py              # Generate 4 images (full run)
+  python daily_album_art_generator.py --test-mode  # Generate 1 image (test)
 
-Environment Setup:
-  1. Copy .env.example to .env
-  2. Fill in your Hugging Face token and AWS credentials
-  3. Run --test-connection to verify setup
+Environment Setup for Local Testing:
+  1. Set HUGGINGFACE_TOKEN environment variable, OR
+  2. Ensure AWS credentials are configured (for SSM access)
+  3. Token will be fetched from SSM /noisemaker/huggingface_token
+
+In Lambda:
+  - IAM role provides AWS credentials automatically
+  - HuggingFace token is fetched from SSM Parameter Store
         """
     )
-    
+
     parser.add_argument(
         '--test-mode',
         action='store_true',
         help='Generate only 1 image (for testing, does not advance state)'
     )
-    
-    parser.add_argument(
-        '--test-connection',
-        action='store_true',
-        help='Test Hugging Face API and AWS S3 connections without generating images'
-    )
-    
+
     args = parser.parse_args()
-    
-    # Test connection mode
-    if args.test_connection:
-        success = test_connection()
-        exit(0 if success else 1)
-    
+
     # Normal generation mode
     print("\n" + "=" * 80)
     if args.test_mode:
@@ -792,19 +704,23 @@ Environment Setup:
     else:
         print("PRODUCTION MODE: 4 images")
     print("=" * 80 + "\n")
-    
-    # Check required parameters (AWS credentials loaded automatically by boto3 from ~/.aws/credentials)
-    if not HUGGINGFACE_TOKEN:
-        print("ERROR: Missing HUGGINGFACE_TOKEN")
-        print("\nStore token in AWS Parameter Store:")
-        print("  aws ssm put-parameter --name /noisemaker/huggingface_token --value 'hf_TOKEN' --type SecureString --region us-east-2")
-        print("\nRun with --help for more information")
+
+    # Verify we can get the HuggingFace token
+    try:
+        token = get_huggingface_token()
+        print(f"HuggingFace token: {token[:10]}...")
+    except Exception as e:
+        print(f"ERROR: Cannot get HuggingFace token: {e}")
+        print("\nFor local testing, either:")
+        print("  1. Set HUGGINGFACE_TOKEN environment variable:")
+        print("     export HUGGINGFACE_TOKEN='hf_...'")
+        print("\n  2. Or ensure AWS credentials are configured for SSM access:")
+        print("     aws ssm get-parameter --name /noisemaker/huggingface_token --with-decryption")
         exit(1)
 
-    print(f"Hugging Face token: {HUGGINGFACE_TOKEN[:10]}...")
     print(f"AWS Region: {AWS_REGION}")
     print(f"S3 Bucket: {S3_BUCKET}\n")
-    
+
     # Run generation
     try:
         result = generate_daily_artwork(test_mode=args.test_mode)
