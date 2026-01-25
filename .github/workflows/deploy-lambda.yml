@@ -1,0 +1,87 @@
+name: Deploy Frank Art Generator to AWS Lambda
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/marketplace/**'
+      - '.github/workflows/deploy-lambda.yml'
+
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          mkdir -p package
+          pip install -r requirements.txt -t package/
+
+      - name: Copy application code
+        working-directory: backend
+        run: |
+          mkdir -p package/backend
+          cp -r marketplace package/backend/
+          touch package/backend/__init__.py
+
+      - name: Create deployment package
+        working-directory: backend/package
+        run: |
+          zip -r ../deployment.zip . -x "*.pyc" -x "*__pycache__*" -x "*.dist-info/*"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Deploy to Lambda
+        working-directory: backend
+        run: |
+          aws lambda update-function-code \
+            --function-name frank-art-generator \
+            --zip-file fileb://deployment.zip \
+            --region us-east-2
+
+          aws lambda wait function-updated \
+            --function-name frank-art-generator \
+            --region us-east-2
+
+      - name: Configure Lambda settings
+        run: |
+          aws lambda update-function-configuration \
+            --function-name frank-art-generator \
+            --handler backend.marketplace.daily_album_art_generator.lambda_handler \
+            --timeout 300 \
+            --memory-size 1024 \
+            --region us-east-2
+
+          aws lambda wait function-updated \
+            --function-name frank-art-generator \
+            --region us-east-2
+
+      - name: Verify deployment
+        run: |
+          echo "=============================================="
+          echo "Deployment completed successfully!"
+          echo "=============================================="
+          echo "Lambda function: frank-art-generator"
+          echo "Handler: backend.marketplace.daily_album_art_generator.lambda_handler"
+          echo "Timeout: 300 seconds"
+          echo "Memory: 1024 MB"
+          echo "Region: us-east-2"
+          echo "Trigger: EventBridge cron(0 21 * * ? *) - 9 PM UTC daily"
