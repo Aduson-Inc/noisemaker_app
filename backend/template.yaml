@@ -82,3 +82,4 @@ Outputs:
   DailyScheduleRule:
     Description: EventBridge Rule for Daily Generation
     Value: !Ref FrankArtGeneratorFunctionDailySchedule
+# Trigger deployment
