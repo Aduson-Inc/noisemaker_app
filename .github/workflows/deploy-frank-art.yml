@@ -1,20 +1,30 @@
-name: Deploy Frank Art Generator (SAM)
+name: Deploy Frank Art Generator
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'backend/marketplace/**'
+      - 'backend/marketplace/frank_art_generator.py'
       - 'backend/template.yaml'
       - 'backend/requirements.txt'
-      - '.github/workflows/deploy-lambda.yml'
+      - '.github/workflows/deploy-frank-art.yml'
 
   workflow_dispatch:
+
+# Prevent concurrent deployments
+concurrency:
+  group: frank-art-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout code
@@ -24,6 +34,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements.txt'
 
       - name: Install SAM CLI
         uses: aws-actions/setup-sam@v2
@@ -39,26 +51,21 @@ jobs:
 
       - name: SAM Build
         working-directory: backend
-        run: sam build
+        run: sam build --use-container
 
       - name: SAM Deploy
         working-directory: backend
         run: |
           sam deploy \
-            --stack-name frank-art-generator-stack \
+            --stack-name frank-art-generator \
             --region us-east-2 \
             --capabilities CAPABILITY_IAM \
-            --s3-bucket noisemakerpromobydoowopp \
-            --s3-prefix sam-deployments/frank-art-generator \
             --no-confirm-changeset \
-            --no-fail-on-empty-changeset
+            --no-fail-on-empty-changeset \
+            --resolve-s3
 
-      - name: Deployment Summary
+      - name: Verify Deployment
         run: |
-          echo "=============================================="
-          echo "SAM Deployment completed successfully!"
-          echo "=============================================="
-          echo "Stack: frank-art-generator-stack"
-          echo "Region: us-east-2"
-          echo "Function: frank-art-generator"
-          echo "Trigger: EventBridge cron(0 21 * * ? *) - 9 PM UTC daily"
+          echo "Verifying Lambda function..."
+          aws lambda get-function --function-name frank-art-generator --region us-east-2 --query 'Configuration.FunctionName'
+          echo "Deployment successful!"

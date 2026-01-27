@@ -29,7 +29,7 @@ from data.song_manager import SongManager
 from data.user_manager import UserManager
 from notifications.milestone_tracker import MilestoneTracker
 
-# Note: Album art generation is handled separately by marketplace.daily_album_art_generator
+# Note: Frank Art generation is handled separately by marketplace.frank_art_generator
 # and runs as an independent Lambda/cron job, not as part of user daily processing
 
 # Configure logging

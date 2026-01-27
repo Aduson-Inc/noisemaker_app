@@ -294,9 +294,8 @@ class ArtworkAnalyticsManager:
             # Get pool status
             pool_metrics = self.track_pool_metrics()
 
-            # Get generator status
-            from marketplace.artwork_generator import get_generation_status
-            generator_status = get_generation_status()
+            # Generator runs as separate Lambda - no status check needed
+            generator_status = {'status': 'managed_by_eventbridge'}
 
             # Get alerts for the day
             daily_alerts = self._get_alerts_for_date(target_date)
@@ -761,8 +760,8 @@ def run_unified_nightly_job() -> Dict[str, Any]:
         # Step 2: Generate if pool < 250
         if pool_count < 250:
             logger.info(f"Pool under 250 ({pool_count}), generating 4 images...")
-            from marketplace.artwork_generator import generate_marketplace_batch
-            generation_result = generate_marketplace_batch('admin', 4)
+            from marketplace.frank_art_generator import generate_daily_artwork
+            generation_result = generate_daily_artwork()
             results['generation'] = generation_result
             logger.info(f"Generation complete")
         else:
