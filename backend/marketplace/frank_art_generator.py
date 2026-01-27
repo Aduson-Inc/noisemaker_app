@@ -311,13 +311,12 @@ def generate_image(prompt: str, retry_count: int = 2) -> Optional[Image.Image]:
         token = get_huggingface_token()
 
         client = InferenceClient(
-            provider="nscale",
-            api_key=token,
+            model="stabilityai/stable-diffusion-xl-base-1.0",
+            token=token,
         )
 
         image = client.text_to_image(
             prompt,
-            model="stabilityai/stable-diffusion-xl-base-1.0",
             negative_prompt="blurry, low quality, watermark, text, logo, signature, distorted",
             num_inference_steps=50,
             guidance_scale=7.5,
