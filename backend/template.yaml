@@ -20,7 +20,6 @@ Resources:
         - x86_64
       Environment:
         Variables:
-          AWS_REGION: us-east-2
           S3_BUCKET: noisemakerpromobydoowopp
       Policies:
         - Version: '2012-10-17'
