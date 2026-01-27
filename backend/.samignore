@@ -54,5 +54,4 @@ lambda_package/
 .DS_Store
 Thumbs.db
 
-# Requirements (use requirements-lambda.txt instead)
-requirements.txt
+# Keep requirements.txt - SAM needs it for dependencies
