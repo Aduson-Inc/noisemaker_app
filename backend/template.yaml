@@ -5,12 +5,8 @@ Description: Frank's Garage - Daily AI Art Generation System
 Globals:
   Function:
     Timeout: 300
-    MemorySize: 256
+    MemorySize: 1024
     Runtime: python3.12
-    Environment:
-      Variables:
-        AWS_REGION: us-east-2
-        S3_BUCKET: noisemakerpromobydoowopp
 
 Resources:
   FrankArtGeneratorFunction:
@@ -20,12 +16,13 @@ Resources:
     Properties:
       FunctionName: frank-art-generator
       CodeUri: .
-      Handler: marketplace.daily_album_art_generator.lambda_handler
+      Handler: backend.marketplace.daily_album_art_generator.lambda_handler
       Description: Generates 4 AI artworks daily for Frank's Garage marketplace
-      Timeout: 300
-      MemorySize: 256
       Architectures:
         - x86_64
+      Environment:
+        Variables:
+          S3_BUCKET: noisemakerpromobydoowopp
       Policies:
         - Statement:
             - Effect: Allow
