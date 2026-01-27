@@ -22,31 +22,12 @@ Resources:
         Variables:
           S3_BUCKET: noisemakerpromobydoowopp
       Policies:
-        - Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action:
-                - s3:GetObject
-                - s3:PutObject
-                - s3:ListBucket
-              Resource:
-                - arn:aws:s3:::noisemakerpromobydoowopp
-                - arn:aws:s3:::noisemakerpromobydoowopp/*
-            - Effect: Allow
-              Action:
-                - dynamodb:GetItem
-                - dynamodb:PutItem
-                - dynamodb:Scan
-                - dynamodb:Query
-                - dynamodb:UpdateItem
-              Resource:
-                - arn:aws:dynamodb:us-east-2:*:table/noisemaker-frank-art
-                - arn:aws:dynamodb:us-east-2:*:table/noisemaker-frank-art/*
-            - Effect: Allow
-              Action:
-                - ssm:GetParameter
-              Resource:
-                - arn:aws:ssm:us-east-2:*:parameter/noisemaker/*
+        - S3CrudPolicy:
+            BucketName: noisemakerpromobydoowopp
+        - DynamoDBCrudPolicy:
+            TableName: noisemaker-frank-art
+        - SSMParameterReadPolicy:
+            ParameterName: noisemaker/*
       Events:
         DailySchedule:
           Type: ScheduleV2

@@ -12,7 +12,6 @@ on:
 
   workflow_dispatch:
 
-# Prevent concurrent deployments
 concurrency:
   group: frank-art-deploy
   cancel-in-progress: false
@@ -20,7 +19,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     permissions:
       contents: read
@@ -34,8 +33,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: 'backend/requirements.txt'
 
       - name: Install SAM CLI
         uses: aws-actions/setup-sam@v2
@@ -49,9 +46,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-2
 
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
       - name: SAM Build
         working-directory: backend
-        run: sam build --use-container
+        run: sam build
 
       - name: SAM Deploy
         working-directory: backend
