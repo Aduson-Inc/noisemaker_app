@@ -13,8 +13,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: frank-art-generator
-      Handler: marketplace.frank_art_generator.lambda_handler
-      CodeUri: .
+      Handler: frank_art_generator.lambda_handler
+      CodeUri: marketplace
       Description: Generates 4 AI artworks daily using SDXL
       Architectures:
         - x86_64
