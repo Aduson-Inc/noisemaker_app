@@ -2,7 +2,7 @@
 # Minimal dependencies for cost and performance optimization
 # Note: boto3 is already included in Lambda runtime, no need to package it
 
-huggingface_hub==0.26.5
+huggingface_hub>=0.28.0
 Pillow==11.1.0
 requests==2.32.4
 urllib3==2.5.0
