@@ -15,7 +15,7 @@
 | Tailwind CSS | 4.1.18 | |
 | Framer Motion | Latest | Animations |
 
-**Hosting:** AWS Amplify
+##FUTURE:
 **Domain:** https://noisemaker.doowopp.com
 
 ---
@@ -28,9 +28,7 @@
 | Python | 3.12 | |
 | Uvicorn | Latest | ASGI server |
 
-**Hosting:** AWS Elastic Beanstalk (Single Instance)
-**Environment:** noisemaker-api-prod
-**Domain:** https://api.noisemaker.doowopp.com
+
 
 ---
 
@@ -73,7 +71,7 @@
 ## AWS Resources
 
 | Service | Resource Name |
-| DynamoDB | 24 tables (`noisemaker-*`) |
+| DynamoDB | 26 tables (`noisemaker-*`) |
 | S3 | noisemakerpromobydoowopp |
 | Parameter Store | `/noisemaker/*` (count TBD) |
 
