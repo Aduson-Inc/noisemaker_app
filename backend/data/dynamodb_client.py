@@ -4,13 +4,17 @@ Secure AWS DynamoDB client for song and user data storage.
 Handles all database operations with proper error handling and security.
 
 Author: Senior Python Backend Engineer
-Version: 1.0
+Version: 1.1
 Security Level: Production-ready
+
+Changelog:
+- v1.1: Added automatic float-to-Decimal conversion for DynamoDB compatibility
 """
 
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 from typing import Dict, List, Optional, Any, Union
+from decimal import Decimal
 import json
 import logging
 from datetime import datetime
@@ -19,6 +23,28 @@ import time
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def convert_floats_to_decimal(obj: Any) -> Any:
+    """
+    Recursively convert float values to Decimal for DynamoDB compatibility.
+    
+    DynamoDB doesn't support Python float type, requires Decimal.
+    Using str() conversion avoids floating point precision issues.
+    
+    Args:
+        obj: Any Python object (dict, list, float, or other)
+        
+    Returns:
+        Same structure with floats converted to Decimal
+    """
+    if isinstance(obj, float):
+        return Decimal(str(obj))
+    elif isinstance(obj, dict):
+        return {k: convert_floats_to_decimal(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_floats_to_decimal(item) for item in obj]
+    return obj
 
 
 class DynamoDBClient:
@@ -32,6 +58,7 @@ class DynamoDBClient:
     - Query optimization and caching
     - Batch operations support
     - Audit logging
+    - Automatic float-to-Decimal conversion
     """
     
     def __init__(self, region_name: str = 'us-east-2'):
@@ -114,6 +141,8 @@ class DynamoDBClient:
         """
         Put item into DynamoDB table with retry logic.
         
+        Automatically converts Python floats to Decimal for DynamoDB compatibility.
+        
         Args:
             table_name (str): Table name
             item (Dict[str, Any]): Item to insert
@@ -130,8 +159,11 @@ class DynamoDBClient:
             if 'created_at' not in item:
                 item['created_at'] = current_time
             
+            # Convert floats to Decimal for DynamoDB compatibility
+            safe_item = convert_floats_to_decimal(item)
+            
             def _put_operation():
-                return table.put_item(Item=item)
+                return table.put_item(Item=safe_item)
             
             self._retry_with_backoff(_put_operation)
             logger.debug(f"Successfully put item to {table_name}")
@@ -176,6 +208,8 @@ class DynamoDBClient:
         """
         Update item in DynamoDB table.
         
+        Automatically converts Python floats to Decimal for DynamoDB compatibility.
+        
         Args:
             table_name (str): Table name
             key (Dict[str, Any]): Primary key
@@ -196,7 +230,10 @@ class DynamoDBClient:
             # Add timestamp
             updates['updated_at'] = datetime.now().isoformat()
             
-            for i, (field, value) in enumerate(updates.items()):
+            # Convert floats to Decimal for DynamoDB compatibility
+            safe_updates = convert_floats_to_decimal(updates)
+            
+            for i, (field, value) in enumerate(safe_updates.items()):
                 if i > 0:
                     update_expression += ", "
                 
@@ -261,6 +298,9 @@ class DynamoDBClient:
         try:
             table = self.dynamodb.Table(table_name)
             
+            # Convert any floats in expression values
+            safe_expression_values = convert_floats_to_decimal(expression_values) if expression_values else None
+            
             def _query_operation():
                 query_kwargs = {
                     'KeyConditionExpression': key_condition,
@@ -269,8 +309,8 @@ class DynamoDBClient:
                 
                 if filter_expression:
                     query_kwargs['FilterExpression'] = filter_expression
-                if expression_values:
-                    query_kwargs['ExpressionAttributeValues'] = expression_values
+                if safe_expression_values:
+                    query_kwargs['ExpressionAttributeValues'] = safe_expression_values
                 if expression_names:
                     query_kwargs['ExpressionAttributeNames'] = expression_names
                 if limit:
@@ -309,13 +349,16 @@ class DynamoDBClient:
         try:
             table = self.dynamodb.Table(table_name)
             
+            # Convert any floats in expression values
+            safe_expression_values = convert_floats_to_decimal(expression_values) if expression_values else None
+            
             def _scan_operation():
                 scan_kwargs = {}
                 
                 if filter_expression:
                     scan_kwargs['FilterExpression'] = filter_expression
-                if expression_values:
-                    scan_kwargs['ExpressionAttributeValues'] = expression_values
+                if safe_expression_values:
+                    scan_kwargs['ExpressionAttributeValues'] = safe_expression_values
                 if expression_names:
                     scan_kwargs['ExpressionAttributeNames'] = expression_names
                 if limit:
@@ -470,12 +513,3 @@ def update_record(table: str, key: Dict[str, Any], updates: Dict[str, Any]) -> b
 def query_records(table: str, condition: str, **kwargs) -> List[Dict[str, Any]]:
     """Query records from table."""
     return dynamodb_client.query_items(table, condition, **kwargs)
-
-
-# RUBRIC SELF-ASSESSMENT:
-# ✅ Environment variables for secrets: YES - Uses AWS credentials from environment/IAM
-# ✅ Follow all instructions exactly: YES - Self-hosted, secure, modular, heavily commented
-# ✅ Secure: YES - Proper credential handling, retry logic, error handling, input validation
-# ✅ Scalable: YES - Efficient queries, batch operations, exponential backoff
-# ✅ Spam-proof: YES - Rate limiting via retry logic, input validation, proper error handling
-# SCORE: 10/10 ✅
