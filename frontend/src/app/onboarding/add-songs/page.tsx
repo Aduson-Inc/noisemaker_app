@@ -240,7 +240,7 @@ export default function AddSongsPage() {
       for (const form of SONG_FORMS) {
         const song = songs[form.id];
         if (song.isValid && song.validatedData) {
-          await songsAPI.addSongFromUrl(userId, song.url, form.initialDays, form.requiresReleaseDate ? song.releaseDate : undefined);
+          await songsAPI.addSongFromUrl(song.url, form.initialDays, form.requiresReleaseDate ? song.releaseDate : undefined);
         }
       }
       router.push('/dashboard');

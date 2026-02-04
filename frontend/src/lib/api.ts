@@ -132,15 +132,14 @@ export const songsAPI = {
 
   /**
    * Add song from Spotify URL with initial days in promotion
+   * Note: user_id comes from JWT token, not request body
    */
   addSongFromUrl: async (
-    userId: string,
     spotifyUrl: string,
     initialDays: number,
     releaseDate?: string
   ) => {
     return apiClient.post('/api/songs/add-from-url', {
-      user_id: userId,
       spotify_url: spotifyUrl,
       initial_days: initialDays,
       release_date: releaseDate
@@ -151,7 +150,7 @@ export const songsAPI = {
    * Get user's songs
    */
   getUserSongs: async (userId: string) => {
-    return apiClient.get(`/api/user/${userId}/songs`);
+    return apiClient.get(`/api/songs/user/${userId}`);
   }
 };
 
