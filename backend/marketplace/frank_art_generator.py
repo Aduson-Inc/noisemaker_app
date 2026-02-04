@@ -2,7 +2,7 @@
 Frank Art Generator for Marketplace
 ====================================
 
-Generates 4 high-quality Frank Art pieces daily using Stable Diffusion XL 1.0 Base.
+Generates 4 high-quality Frank Art pieces daily using free HuggingFace Space.
 Runs as AWS Lambda triggered by EventBridge at 9 PM UTC daily.
 
 Three rotating lists advance by 1 each day:
@@ -37,43 +37,6 @@ logger = logging.getLogger(__name__)
 
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-2')
 S3_BUCKET = os.environ.get('S3_BUCKET', 'noisemakerpromobydoowopp')
-
-# HuggingFace token - cached after first fetch
-_huggingface_token_cache = None
-
-
-def get_huggingface_token() -> str:
-    """
-    Fetch HuggingFace token from AWS SSM Parameter Store.
-    Cached after first fetch for performance.
-    """
-    global _huggingface_token_cache
-
-    if _huggingface_token_cache:
-        return _huggingface_token_cache
-
-    # Check environment variable first (local testing)
-    env_token = os.environ.get('HUGGINGFACE_TOKEN')
-    if env_token:
-        logger.info("Using HuggingFace token from environment variable")
-        _huggingface_token_cache = env_token
-        return _huggingface_token_cache
-
-    # Fetch from SSM Parameter Store
-    try:
-        logger.info("Fetching HuggingFace token from SSM...")
-        ssm_client = boto3.client('ssm', region_name=AWS_REGION)
-        response = ssm_client.get_parameter(
-            Name='/noisemaker/huggingface_token',
-            WithDecryption=True
-        )
-        _huggingface_token_cache = response['Parameter']['Value']
-        logger.info("HuggingFace token loaded from SSM")
-        return _huggingface_token_cache
-    except Exception as e:
-        logger.error(f"Failed to get HuggingFace token from SSM: {e}")
-        raise
-
 
 # Generation settings
 IMAGES_PER_RUN = 4
@@ -274,9 +237,9 @@ def get_current_prompt(state: Dict) -> Tuple[str, str, Optional[str], str]:
     colors = COLORS[state['color_index']]
 
     if colors:
-        prompt = f"create a {art_style} background graphic in the style of {artist} using {colors}"
+        prompt = f"create a {art_style} graphic in the style of {artist} using {colors}"
     else:
-        prompt = f"create a {art_style} background graphic in the style of {artist}"
+        prompt = f"create a {art_style} graphic in the style of {artist}"
 
     return art_style, artist, colors, prompt
 
@@ -300,42 +263,41 @@ def advance_state(state: Dict) -> Dict:
 
 def generate_image(prompt: str, retry_count: int = 2) -> Optional[Image.Image]:
     """
-    Generate image using HuggingFace SDXL API via nscale provider.
-    Includes retry logic for rate limits and model loading.
-    Requires huggingface_hub >= 0.28.0
+    Generate image using free HuggingFace Space via Gradio Client.
+    Uses mrfakename/Z-Image-Turbo (SDXL-based, completely free).
     """
     try:
-        from huggingface_hub import InferenceClient
+        from gradio_client import Client
 
         logger.info(f"Generating image: {prompt[:60]}...")
 
-        token = get_huggingface_token()
-
-        # Use nscale provider for SDXL inference
-        # See: https://huggingface.co/docs/inference-providers/providers/nscale
-        client = InferenceClient(
-            provider="nscale",
-            api_key=token,
+        client = Client("mrfakename/Z-Image-Turbo")
+        
+        result = client.predict(
+            prompt=prompt,
+            seed=42,
+            random_seed=True,
+            resolution="1024x1024 ( 1:1 )",
+            steps=8,
+            shift=3,
+            api_name="/generate"
         )
-
-        # Generate image (nscale handles SDXL natively)
-        image = client.text_to_image(
-            prompt,
-            model="stabilityai/stable-diffusion-xl-base-1.0",
-            negative_prompt="blurry, low quality, watermark, text, logo, signature, distorted",
-            guidance_scale=7.5,
-        )
-
+        
+        # Result is a tuple: (image_path, seed_str, seed_int)
+        image_path = result[0]
+        
+        # Load the image
+        image = Image.open(image_path)
+        
         logger.info(f"Image generated: {image.size}")
         return image
 
     except Exception as e:
         error_msg = str(e).lower()
 
-        # Retry on rate limit or model loading
-        if retry_count > 0 and ("429" in error_msg or "rate limit" in error_msg or "503" in error_msg or "loading" in error_msg):
-            logger.warning(f"Retrying in 20s... ({retry_count} retries left)")
-            time.sleep(20)
+        if retry_count > 0 and ("queue" in error_msg or "timeout" in error_msg or "503" in error_msg):
+            logger.warning(f"Retrying in 30s... ({retry_count} retries left)")
+            time.sleep(30)
             return generate_image(prompt, retry_count - 1)
 
         logger.error(f"Image generation failed: {e}")
@@ -558,14 +520,6 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("FRANK ART GENERATOR - Local Test")
     print("=" * 60)
-
-    try:
-        token = get_huggingface_token()
-        print(f"HuggingFace token: {token[:10]}...")
-    except Exception as e:
-        print(f"ERROR: {e}")
-        print("\nSet HUGGINGFACE_TOKEN env var or configure AWS credentials for SSM")
-        exit(1)
 
     print(f"Region: {AWS_REGION}")
     print(f"Bucket: {S3_BUCKET}")
