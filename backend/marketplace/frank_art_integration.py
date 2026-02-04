@@ -14,14 +14,14 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Any
 
-# Local imports
-from .frank_art_manager import (
+# Local imports - use absolute imports
+from marketplace.frank_art_manager import (
     get_frank_art_manager,
     download_frank_art_free,
     purchase_frank_art
 )
-from .artwork_analytics import track_user_action
-from ..data.user_manager import (
+from marketplace.artwork_analytics import track_user_action
+from data.user_manager import (
     init_user_art_tokens,
     award_art_tokens_for_song,
     get_user_art_token_info
@@ -201,6 +201,63 @@ def get_user_collection(user_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Collection error: {e}")
         return {'success': False, 'error': str(e)}
+
+
+# =============================================================================
+# STATUS & HEALTH (used by routes)
+# =============================================================================
+
+def get_user_marketplace_status(user_id: str) -> Dict[str, Any]:
+    """
+    Get user's marketplace status including tokens.
+    
+    Args:
+        user_id: User identifier
+        
+    Returns:
+        Status with token info
+    """
+    try:
+        token_info = get_user_art_token_info(user_id)
+        
+        return {
+            'success': True,
+            'tokens': {
+                'art_tokens': token_info.get('art_tokens', 0),
+                'tokens_from_songs': token_info.get('tokens_from_songs', 0),
+                'max_song_tokens': 12
+            }
+        }
+    except Exception as e:
+        logger.error(f"Status error: {e}")
+        return {'success': False, 'error': str(e)}
+
+
+def get_integration_health() -> Dict[str, Any]:
+    """
+    Health check for Frank's Garage integration.
+    
+    Returns:
+        Health status
+    """
+    try:
+        from marketplace.artwork_analytics import get_pool_count
+        
+        pool_count = get_pool_count()
+        
+        return {
+            'success': True,
+            'overall_health': 'healthy' if pool_count > 50 else 'warning',
+            'pool_count': pool_count,
+            'pool_status': 'ok' if pool_count > 50 else 'low'
+        }
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+        return {
+            'success': False,
+            'error': str(e),
+            'overall_health': 'unhealthy'
+        }
 
 
 # =============================================================================

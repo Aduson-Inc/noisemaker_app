@@ -12,13 +12,23 @@ from fastapi import APIRouter, HTTPException, status, Query
 from typing import Dict, Any, List, Optional, Literal
 from pydantic import BaseModel, Field
 
-from marketplace import frank_art_manager, analytics_manager, frank_art_integration
+# Direct imports from the actual modules
+from marketplace.frank_art_manager import get_frank_art_manager
+from marketplace.frank_art_integration import (
+    get_user_marketplace_status,
+    handle_artwork_download,
+    handle_artwork_purchase,
+    get_integration_health
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Initialize router
 router = APIRouter(prefix="/api/frank-art", tags=["Frank's Garage"])
+
+# Get manager instance
+frank_art_manager = get_frank_art_manager()
 
 
 # ============================================================================
@@ -175,7 +185,7 @@ async def get_user_tokens(
         logger.info(f"Fetching tokens for user: {user_id}")
 
         # Get status from integration
-        status_result = frank_art_integration.get_user_marketplace_status(user_id)
+        status_result = get_user_marketplace_status(user_id)
 
         if not status_result.get('success'):
             raise HTTPException(
@@ -250,7 +260,7 @@ async def download_frank_art(request: DownloadRequest) -> DownloadResponse:
         logger.info(f"Processing FREE download for artwork {request.artwork_id} by user {request.user_id}")
 
         # Process download with integrated tracking
-        result = frank_art_integration.handle_artwork_download(
+        result = handle_artwork_download(
             request.user_id,
             request.artwork_id
         )
@@ -298,7 +308,7 @@ async def purchase_frank_art(request: PurchaseRequest) -> PurchaseResponse:
         logger.info(f"Processing PURCHASE for {len(request.artwork_ids)} artworks by user {request.user_id}")
 
         # Process purchase with integrated tracking
-        result = frank_art_integration.handle_artwork_purchase(
+        result = handle_artwork_purchase(
             request.user_id,
             request.artwork_ids,
             request.purchase_type
@@ -334,8 +344,14 @@ async def get_frank_art_analytics() -> Dict[str, Any]:
     try:
         logger.info("Fetching Frank's Garage analytics")
 
-        # Get analytics from manager
-        analytics = frank_art_manager.get_marketplace_analytics()
+        # Get basic analytics from manager
+        pool_count = frank_art_manager.get_pool_count()
+        
+        analytics = {
+            'pool_count': pool_count,
+            'max_pool_size': frank_art_manager.max_pool_size,
+            'pool_percentage': round((pool_count / frank_art_manager.max_pool_size) * 100, 1)
+        }
 
         return {
             "success": True,
@@ -359,7 +375,7 @@ async def frank_art_health_check() -> Dict[str, Any]:
     """
     try:
         # Get integration health
-        health = frank_art_integration.get_integration_health()
+        health = get_integration_health()
 
         return health
 
