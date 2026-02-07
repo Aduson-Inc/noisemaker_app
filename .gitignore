@@ -38,8 +38,7 @@ search_results/
 *.backup
 # Claude pollution prevention
 tmpclaude-*
-.claude/
-.claude
+.claude/settings.local.json
 
 # Editor/cache junk
 .vscode/
