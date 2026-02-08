@@ -20,7 +20,7 @@ from models.schemas import (
     AddSongResponse
 )
 from middleware.auth import get_current_user_id
-from data.song_manager import SongManager
+from data.song_manager import song_manager
 from data.user_manager import user_manager
 from data.dynamodb_client import dynamodb_client
 
@@ -30,8 +30,6 @@ logger = logging.getLogger(__name__)
 # Initialize router
 router = APIRouter(prefix="/api/user", tags=["Dashboard"])
 
-# Initialize managers
-song_manager = SongManager()
 
 
 @router.get("/{user_id}/songs", response_model=List[SongInfo])

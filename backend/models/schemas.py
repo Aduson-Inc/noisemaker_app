@@ -115,6 +115,7 @@ class ExchangeTokenResponseEnhanced(BaseModel):
 class OAuthCallbackRequest(BaseModel):
     code: str
     user_id: str
+    state: str
 
 class OAuthCallbackResponse(BaseModel):
     success: bool

@@ -25,8 +25,8 @@ from spotify.track_analyzer import TrackAnalyzer, TrackMetrics
 from spotify.baseline_calculator import baseline_calculator
 from spotify.popularity_tracker import popularity_tracker
 from spotify.fire_mode_analyzer import fire_mode_analyzer
-from data.song_manager import SongManager
-from data.user_manager import UserManager
+from data.song_manager import song_manager as _global_song_manager
+from data.user_manager import user_manager as _global_user_manager
 from notifications.milestone_tracker import MilestoneTracker
 
 # Note: Frank Art generation is handled separately by marketplace.frank_art_generator
@@ -55,8 +55,8 @@ class DailyProcessor:
     def __init__(self):
         """Initialize daily processor with required components."""
         self.track_analyzer = TrackAnalyzer()
-        self.song_manager = SongManager()
-        self.user_manager = UserManager()
+        self.song_manager = _global_song_manager
+        self.user_manager = _global_user_manager
         self.milestone_tracker = MilestoneTracker()
 
         logger.info("Daily processor initialized")
@@ -479,7 +479,7 @@ class DailyProcessor:
             tier_config = self.user_manager.subscription_tiers.get(
                 subscription_tier, {}
             )
-            platforms_limit = tier_config.get("platforms_limit", 3)
+            platforms_limit = tier_config.get("platforms_limit", 2)
 
             # Get user's selected platforms
             platform_selection = self.user_manager.get_user_platform_selection(user_id)

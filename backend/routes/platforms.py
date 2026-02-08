@@ -16,7 +16,7 @@ from models.schemas import (
     SuccessResponse
 )
 from middleware.auth import get_current_user_id
-from data.platform_oauth_manager import PlatformOAuthManager
+from data.platform_oauth_manager import oauth_manager as platform_oauth
 from data.user_manager import user_manager
 
 # Configure logging
@@ -24,9 +24,6 @@ logger = logging.getLogger(__name__)
 
 # Initialize router
 router = APIRouter(prefix="/api/oauth", tags=["Platform OAuth"])
-
-# Initialize platform OAuth manager
-platform_oauth = PlatformOAuthManager()
 
 # Supported platforms
 SUPPORTED_PLATFORMS = ['instagram', 'twitter', 'facebook', 'youtube', 'tiktok', 'reddit', 'discord', 'threads']
@@ -115,7 +112,7 @@ async def handle_platform_callback(
             platform=platform,
             code=request.code,
             redirect_uri=redirect_uri,
-            state=None  # State validation handled internally
+            state=request.state
         )
 
         if not callback_result.get('success'):
@@ -267,7 +264,7 @@ async def get_platforms_status(
         return {
             "connections": connection_status,
             "selected_platforms": platform_selection.get('platforms_enabled', []),
-            "platform_limit": platform_selection.get('platform_limit', 3),
+            "platform_limit": platform_selection.get('platform_limit', 2),
             "subscription_tier": platform_selection.get('subscription_tier', 'talent')
         }
 

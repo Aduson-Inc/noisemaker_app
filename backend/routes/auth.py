@@ -22,26 +22,16 @@ from models.schemas import (
 )
 from middleware.auth import create_jwt_token, get_current_user_id
 from auth.user_auth import UserAuth
-from data.user_manager import UserManager
-from data.platform_oauth_manager import PlatformOAuthManager
-from data.song_manager import SongManager
+from data.user_manager import user_manager
+from data.platform_oauth_manager import oauth_manager as platform_oauth
+from data.song_manager import song_manager
 from notifications.milestone_tracker import MilestoneTracker
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 user_auth = UserAuth()
-user_manager = UserManager()
 milestone_tracker = MilestoneTracker()
-platform_oauth = PlatformOAuthManager()
-song_manager = SongManager()
-
-# Platform limits by subscription tier
-TIER_PLATFORM_LIMITS = {
-    'talent': 2,
-    'star': 5,
-    'legend': 8
-}
 
 # Check if running in production (HTTPS)
 IS_PRODUCTION = os.getenv('FRONTEND_URL', '').startswith('https://')
