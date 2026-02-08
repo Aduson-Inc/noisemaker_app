@@ -87,6 +87,7 @@ export default function NoiseMAKERAuditor() {
     { id: "D13", file: "data/user_manager.py", fix: "Removed duplicate instances. Milestone system fully rewritten.", date: "Feb 8" },
     { id: "—", file: "fire_mode_analyzer.py", fix: "Complete rewrite: levels not tiers, 5-day window, consecutive-day exit", date: "Feb 8" },
     { id: "—", file: "milestone_tracker.py", fix: "Complete rewrite: pure functions, no classes, no AWS clients", date: "Feb 8" },
+    { id: "D16", file: "routes/auth.py", fix: "Removed dead initialize_baseline_collection() call that crashed signup", date: "Feb 8" },
   ];
 
   // ============================================
@@ -96,7 +97,6 @@ export default function NoiseMAKERAuditor() {
     { id: "D1", priority: "critical", title: "spotify_popularity NOT being fetched/stored", location: "noisemaker-songs table", description: "All songs have spotify_popularity = 0. Breaks Fire Mode." },
     { id: "D2", priority: "critical", title: "popularity_history NOT being tracked", location: "noisemaker-songs table", description: "popularity_history = empty []. Fire Mode can never trigger." },
     { id: "D3", priority: "medium", title: "Orphaned email reservations (was 7, now 1)", location: "noisemaker-email-reservations", description: "Previously 7 orphaned entries. Now 1 active entry (TRESCH). Verify old entries were cleaned up or if table was recreated." },
-    { id: "D16", priority: "high", title: "auth.py still calls initialize_baseline_collection()", location: "routes/auth.py:185", description: "Function was deleted from user_manager.py. Will crash on signup." },
     { id: "O5", priority: "medium", title: "Field naming inconsistency", location: "songs.py vs song_manager.py", description: "promotion_stage vs stage_of_promotion — pick one." },
     { id: "D5", priority: "medium", title: "streams_per_day is WRONG concept", location: "noisemaker-users table", description: "Spotify has popularity (0-100), not streams_per_day." },
     { id: "D6", priority: "medium", title: "Typo: artiist_name (double i)", location: "noisemaker-users table", description: "Should be artist_name." },
@@ -152,7 +152,7 @@ export default function NoiseMAKERAuditor() {
     { path: "CLAUDE.md", status: "done", notes: "Added Feb 7 — project guidance + dev rules + auditor reference" },
     { path: "backend/data/platform_oauth_manager.py", status: "audited", notes: "CRITICAL: writes to missing table. 835 lines. Token encryption, OAuth for 8 platforms." },
     { path: "backend/data/user_manager.py", status: "fixed", notes: "REWRITTEN: Dead baseline funcs removed, milestone system replaced (30+ milestones, per-song tracking, S3 presigned URLs)" },
-    { path: "backend/routes/auth.py", status: "audited", notes: "Dead MilestoneTracker import removed. D16: initialize_baseline_collection call still present." },
+    { path: "backend/routes/auth.py", status: "fixed", notes: "Dead MilestoneTracker import + initialize_baseline_collection call removed." },
     { path: "backend/routes/platforms.py", status: "audited", notes: "288 lines. BUG: state=None in callback. Default limit fallback 3." },
     { path: "backend/main.py", status: "audited", notes: "111 lines. All routes registered correctly. CORS configured." },
     { path: "backend/spotify/baseline_calculator.py", status: "fixed", notes: "Min baseline removed. Averages however many tracks exist. Now triggered by payment.py" },
@@ -323,7 +323,7 @@ export default function NoiseMAKERAuditor() {
             type: 'folder',
             children: [
               { name: '__init__.py', type: 'file', status: 'pending' },
-              { name: 'auth.py', type: 'file', status: 'audited', note: 'Dead MilestoneTracker removed. D16: initialize_baseline_collection still called' },
+              { name: 'auth.py', type: 'file', status: 'fixed', note: 'Dead MilestoneTracker + initialize_baseline_collection removed' },
               { name: 'dashboard.py', type: 'file', status: 'audited', note: 'Partial audit. Milestone compat verified.' },
               { name: 'frank_art.py', type: 'file', status: 'fixed', note: '/my-collection removed. CORS fixed.' },
               { name: 'payment.py', type: 'file', status: 'fixed', note: 'Baseline trigger + webhook sync + idempotency guard' },
