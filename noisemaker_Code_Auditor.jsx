@@ -35,6 +35,24 @@ export default function NoiseMAKERAuditor() {
   // - Updated auditor to master version with complete file tree
 
   // ============================================
+  // SESSION: Feb 7, 2026 — Evening (Deep Audit)
+  // ============================================
+  // - Comprehensive 6-task backend audit completed (READ ONLY)
+  // - CRITICAL: noisemaker-platform-connections table MISSING — platform OAuth fully broken
+  // - CRITICAL: routes/platforms.py passes state=None — CSRF validation always fails
+  // - Baseline calculation is dead code — never triggered after signup/payment
+  // - Found 3 duplicate PlatformOAuthManager instances (3 SSM calls on startup)
+  // - Found 4 duplicate SongManager instances + 1 duplicate UserManager
+  // - Timestamp inconsistency: datetime.now() vs datetime.utcnow() mixed in user_manager.py
+  // - Default platform limit fallback is 3 (should be 2 for Talent tier)
+  // - DynamoDB table counts updated from live scans
+  // - Custom commands created: noisemaker-doc-auditor, noisemaker-project-lead
+  // - .gitignore updated to track .claude/commands/ (settings.local.json still ignored)
+  // - DEVELOPMENT_RULES.md deleted (superseded by CLAUDE.md)
+  // - 11 backend files audited/analyzed in this session
+  // - Test user TRESCH active: Star tier, platforms_pending, first_payment milestone achieved
+
+  // ============================================
   // COMPLETED FIXES
   // ============================================
   const completedFixes = [
@@ -56,13 +74,20 @@ export default function NoiseMAKERAuditor() {
   const openIssues = [
     { id: "D1", priority: "critical", title: "spotify_popularity NOT being fetched/stored", location: "noisemaker-songs table", description: "All songs have spotify_popularity = 0. Breaks Fire Mode." },
     { id: "D2", priority: "critical", title: "popularity_history NOT being tracked", location: "noisemaker-songs table", description: "popularity_history = empty []. Fire Mode can never trigger." },
-    { id: "D3", priority: "critical", title: "7 orphaned email reservations", location: "noisemaker-email-reservations", description: "Deleted users' emails still reserved → blocks signups with 400 error." },
+    { id: "D3", priority: "medium", title: "Orphaned email reservations (was 7, now 1)", location: "noisemaker-email-reservations", description: "Previously 7 orphaned entries. Now 1 active entry (TRESCH). Verify old entries were cleaned up or if table was recreated." },
+    { id: "D9", priority: "critical", title: "noisemaker-platform-connections table MISSING", location: "DynamoDB / platform_oauth_manager.py", description: "Table was deleted. All platform OAuth writes fail. Users cannot connect any platform." },
+    { id: "D10", priority: "critical", title: "routes/platforms.py passes state=None to callback", location: "routes/platforms.py:118", description: "OAuth callback ignores state param from URL, passes None. CSRF validation always fails." },
+    { id: "D11", priority: "critical", title: "Baseline calculation never triggered", location: "baseline_calculator.py + routes/auth.py", description: "calculate_baseline() is never called. baseline_status stays not_started forever. Fire Mode can never activate." },
     { id: "O5", priority: "medium", title: "Field naming inconsistency", location: "songs.py vs song_manager.py", description: "promotion_stage vs stage_of_promotion — pick one." },
     { id: "D5", priority: "medium", title: "streams_per_day is WRONG concept", location: "noisemaker-users table", description: "Spotify has popularity (0-100), not streams_per_day." },
     { id: "D6", priority: "medium", title: "Typo: artiist_name (double i)", location: "noisemaker-users table", description: "Should be artist_name." },
     { id: "D7", priority: "medium", title: "Color analysis not implemented", location: "content/image_processor.py", description: "File exists, needs audit. Should match song art colors → background templates." },
+    { id: "D12", priority: "medium", title: "3 duplicate PlatformOAuthManager instances", location: "routes/auth.py:36, routes/platforms.py:29, data/platform_oauth_manager.py:769", description: "Each creates TokenEncryption() → 3 SSM API calls on startup. Should import global oauth_manager." },
+    { id: "D13", priority: "medium", title: "Duplicate SongManager + UserManager instances", location: "routes/auth.py, routes/dashboard.py, scheduler/daily_processor.py", description: "4 SongManager instances + 2 UserManager instances. Should import globals." },
+    { id: "D14", priority: "medium", title: "Timestamp inconsistency (now vs utcnow)", location: "data/user_manager.py", description: "Some fields use datetime.now() (local EST), others datetime.utcnow(). 5-hour gap causes comparison bugs." },
     { id: "O6", priority: "low", title: "Hardcoded genre default 'Pop'", location: "songs.py:519", description: "All songs default to Pop." },
     { id: "D8", priority: "low", title: "Inconsistent user data between old/new users", location: "noisemaker-users table", description: "Jan 30 user missing fields that Feb 4 user has." },
+    { id: "D15", priority: "low", title: "Platform limit default fallback is 3", location: "routes/platforms.py:270, scheduler/daily_processor.py:482", description: "Default should be 2 (Talent tier minimum), not 3." },
     { id: "C1", priority: "low", title: "Nested .claude/.vscode in subfolders", location: "backend/content, marketplace, scheduler", description: "Agent leftover config files. Verify then remove." },
   ];
 
@@ -80,14 +105,17 @@ export default function NoiseMAKERAuditor() {
     { id: 8, category: "Baseline Popularity", question: "Spotify field or calculated?", status: "answered", answer: "Spotify popularity (0-100). baseline_calculator.py averages 5 most recent songs, rounds UP" },
     { id: 9, category: "Baseline Popularity", question: "Which file runs this calculation?", status: "answered", answer: "backend/spotify/baseline_calculator.py" },
     { id: 10, category: "Daily Processor", question: "What file adds +1 to days_in_promotion?", status: "answered", answer: "backend/scheduler/daily_processor.py" },
-    { id: 11, category: "Daily Processor", question: "Is this Lambda, cron job, or backend service?", status: "open", answer: null },
+    { id: 11, category: "Daily Processor", question: "Is this Lambda, cron job, or backend service?", status: "answered", answer: "Not visible in main.py. cron_manager.py exists but unaudited. Likely needs EventBridge or external trigger." },
     { id: 12, category: "Frontend", question: "Is the loading state already built?", status: "open", answer: null },
     { id: 13, category: "Frontend", question: "Progress updates: WebSocket, polling, or single?", status: "open", answer: null },
     { id: 14, category: "Business Logic", question: "If user uploads only 1 song, does it start at Day 0?", status: "open", answer: null },
     { id: 15, category: "Business Logic", question: "Can users add songs 2 & 3 later?", status: "open", answer: null },
-    { id: 16, category: "Architecture", question: "Which tables can merge into user profile?", status: "open", answer: null },
+    { id: 16, category: "Architecture", question: "Which tables can merge into user profile?", status: "answered", answer: "platform-connections should NOT merge (composite key needed). milestones already IN user record. noisemaker-baselines could potentially merge." },
     { id: 17, category: "Frontend", question: "Which landing page variant is active? (aurora/monolith/noir-luxe/genz)", status: "open", answer: null },
     { id: 18, category: "Frontend", question: "Are pricing-v2.tsx and platforms-v*.tsx still in use?", status: "open", answer: null },
+    { id: 19, category: "Architecture", question: "Should noisemaker-platform-connections be recreated or redesigned?", status: "open", answer: null },
+    { id: 20, category: "Business Logic", question: "When should baseline calculation trigger? After payment? After first song? On schedule?", status: "open", answer: null },
+    { id: 21, category: "Data Storage", question: "Is the noisemaker-baselines table also missing? baseline_calculator.py references it.", status: "open", answer: null },
   ];
 
   // ============================================
@@ -102,20 +130,31 @@ export default function NoiseMAKERAuditor() {
     { path: "frontend/src/lib/api.ts", status: "fixed", notes: "getUserSongs path fixed, redundant user_id removed" },
     { path: "frontend/src/app/onboarding/add-songs/page.tsx", status: "fixed", notes: "Updated API call signature" },
     { path: "CLAUDE.md", status: "done", notes: "Added Feb 7 — project guidance + dev rules + auditor reference" },
+    { path: "backend/data/platform_oauth_manager.py", status: "audited", notes: "CRITICAL: writes to missing table. 835 lines. Token encryption, OAuth for 8 platforms." },
+    { path: "backend/data/user_manager.py", status: "audited", notes: "1762 lines. Tier limits correct (2/5/8). Mixed timestamp formats. baseline_streams_per_day wrong name." },
+    { path: "backend/routes/auth.py", status: "audited", notes: "361 lines. Signup/signin/exchange. Duplicate manager instances. Smart routing." },
+    { path: "backend/routes/platforms.py", status: "audited", notes: "288 lines. BUG: state=None in callback. Default limit fallback 3." },
+    { path: "backend/main.py", status: "audited", notes: "111 lines. All routes registered correctly. CORS configured." },
+    { path: "backend/spotify/baseline_calculator.py", status: "audited", notes: "415 lines. DEAD CODE — never called by any route or scheduler." },
+    { path: "backend/spotify/spotipy_client.py", status: "audited", notes: "548 lines. Works correctly but not invoked for popularity tracking." },
+    { path: "backend/spotify/popularity_tracker.py", status: "audited", notes: "409 lines. Never invoked — explains D1/D2." },
+    { path: "backend/spotify/fire_mode_analyzer.py", status: "audited", notes: "Partial read. 4-tier system. Depends on uncalculated baseline." },
+    { path: "backend/models/schemas.py", status: "audited", notes: "270 lines. All Pydantic request/response models." },
+    { path: "backend/auth/user_auth.py", status: "audited", notes: "Partial read. Password hashing, sessions. Uses time.time() for created_at." },
   ];
 
   // ============================================
   // FILE QUEUE (next to analyze)
   // ============================================
   const fileQueue = [
-    { priority: 1, file: "backend/scheduler/daily_processor.py", reason: "Core product — 9 PM daily job, need to understand trigger mechanism", status: "next" },
-    { priority: 2, file: "backend/spotify/spotipy_client.py", reason: "Popularity fetch — why isn't it making it to DynamoDB? (D1)", status: "queued" },
-    { priority: 3, file: "backend/spotify/popularity_tracker.py", reason: "Daily popularity tracking — why is history empty? (D2)", status: "queued" },
-    { priority: 4, file: "backend/content/image_processor.py", reason: "Color analysis implementation status (D7)", status: "queued" },
-    { priority: 5, file: "backend/spotify/baseline_calculator.py", reason: "Verify baseline calc logic matches documentation", status: "queued" },
-    { priority: 6, file: "backend/content/content_orchestrator.py", reason: "Full content creation pipeline", status: "queued" },
-    { priority: 7, file: "backend/scheduler/cron_manager.py", reason: "How daily_processor is triggered", status: "queued" },
-    { priority: 8, file: "backend/main.py", reason: "Entry point — verify all routes registered, middleware loaded", status: "queued" },
+    { priority: 1, file: "backend/scheduler/daily_processor.py", reason: "Core product — 9 PM daily job. Only major unaudited backend file.", status: "next" },
+    { priority: 2, file: "backend/scheduler/cron_manager.py", reason: "How daily_processor is triggered — EventBridge? Cron?", status: "queued" },
+    { priority: 3, file: "backend/content/image_processor.py", reason: "Color analysis implementation status (D7)", status: "queued" },
+    { priority: 4, file: "backend/content/content_orchestrator.py", reason: "Full content creation pipeline", status: "queued" },
+    { priority: 5, file: "backend/content/caption_generator.py", reason: "AI caption generation — platform character limits", status: "queued" },
+    { priority: 6, file: "backend/content/multi_platform_poster.py", reason: "Actual posting logic — depends on platform_oauth_manager", status: "queued" },
+    { priority: 7, file: "backend/auth/environment_loader.py", reason: "get_platform_credentials — used by baseline_calculator + popularity_tracker", status: "queued" },
+    { priority: 8, file: "backend/scripts/create_dynamodb_tables.py", reason: "Check if platform-connections table is in the creation script", status: "queued" },
     { priority: 9, file: "backend/config/platform_config.py", reason: "Unknown file — not in old auditor, needs investigation", status: "queued" },
     { priority: 10, file: "backend/content/content_integration.py", reason: "Unknown file — not in old auditor, needs investigation", status: "queued" },
   ];
@@ -124,11 +163,14 @@ export default function NoiseMAKERAuditor() {
   // DynamoDB TABLE STATUS (from Feb 4 audit)
   // ============================================
   const tableStatus = [
-    { name: "noisemaker-users", items: 2, size: "5.7 KB", status: "active", issue: "artiist_name typo, baseline_streams_per_day wrong concept" },
-    { name: "noisemaker-songs", items: 3, size: "3.9 KB", status: "issues", issue: "popularity=0, history=empty" },
+    { name: "noisemaker-users", items: 1, size: "~3 KB", status: "active", issue: "artiist_name typo, baseline_streams_per_day wrong concept, mixed timestamp formats" },
+    { name: "noisemaker-songs", items: 0, size: "0 B", status: "issues", issue: "Empty — no songs uploaded yet. When populated: popularity=0, history=empty (D1/D2)" },
     { name: "noisemaker-frank-art", items: 19, size: "11.6 KB", status: "active", issue: null },
-    { name: "noisemaker-email-reservations", items: 9, size: "602 B", status: "issues", issue: "7 orphaned entries blocking signups" },
-    { name: "noisemaker-oauth-states", items: 34, size: "7 KB", status: "issues", issue: "All expired, needs TTL auto-delete" },
+    { name: "noisemaker-email-reservations", items: 1, size: "~100 B", status: "active", issue: "1 entry (TRESCH). Previous orphaned entries appear cleaned up." },
+    { name: "noisemaker-oauth-states", items: 0, size: "0 B", status: "active", issue: "Empty. Needs TTL auto-delete when populated." },
+    { name: "noisemaker-frank-art-purchases", items: 0, size: "0 B", status: "active", issue: null },
+    { name: "noisemaker-milestones", items: 0, size: "0 B", status: "active", issue: "Empty — milestones stored in user record instead" },
+    { name: "noisemaker-platform-connections", items: "N/A", size: "N/A", status: "issues", issue: "TABLE DOES NOT EXIST — must be created. PK: user_id, SK: platform" },
   ];
 
   // ============================================
@@ -140,16 +182,16 @@ export default function NoiseMAKERAuditor() {
     type: 'folder',
     children: [
       { name: 'CLAUDE.md', type: 'file', status: 'audited', note: 'Project guidance + dev rules. Commit ff6fa07' },
-      { name: 'DEVELOPMENT_RULES.md', type: 'file', status: 'pending', note: 'May be superseded by CLAUDE.md — verify' },
+      { name: 'DEVELOPMENT_RULES.md', type: 'file', status: 'fixed', note: 'Deleted — superseded by CLAUDE.md (commit 9af0666)' },
       { name: 'README.md', type: 'file', status: 'pending', note: 'Verify if current' },
-      { name: '.gitignore', type: 'file', status: 'pending', note: 'Verify entries' },
-      { name: 'noisemaker-auditor.tsx', type: 'file', status: 'pending', note: 'Old auditor version — replace with this JSX' },
+      { name: '.gitignore', type: 'file', status: 'audited', note: 'Updated to track .claude/commands/, backend/.cache already ignored' },
+      { name: 'noisemaker-auditor.tsx', type: 'file', status: 'pending', note: 'Old version — superseded by noisemaker_Code_Auditor.jsx' },
       { name: 'cleanup/', type: 'folder', status: 'pending', note: 'Leftover from previous cleanup session' },
       {
         name: 'backend',
         type: 'folder',
         children: [
-          { name: 'main.py', type: 'file', status: 'pending', note: 'Entry point — verify routes + middleware' },
+          { name: 'main.py', type: 'file', status: 'audited', note: 'Entry point — all routes registered, CORS configured' },
           { name: '__init__.py', type: 'file', status: 'pending' },
           { name: '.cache', type: 'file', status: 'pending', note: 'Should be gitignored' },
           { name: 'requirements.txt', type: 'file', status: 'pending' },
@@ -161,7 +203,7 @@ export default function NoiseMAKERAuditor() {
             children: [
               { name: '__init__.py', type: 'file', status: 'pending' },
               { name: 'environment_loader.py', type: 'file', status: 'pending', note: 'get_platform_credentials' },
-              { name: 'user_auth.py', type: 'file', status: 'pending' },
+              { name: 'user_auth.py', type: 'file', status: 'audited', note: 'Password hashing, sessions. Uses time.time() for created_at' },
             ]
           },
           {
@@ -203,8 +245,8 @@ export default function NoiseMAKERAuditor() {
               { name: '__init__.py', type: 'file', status: 'pending' },
               { name: 'dynamodb_client.py', type: 'file', status: 'fixed', note: 'Float→Decimal conversion added' },
               { name: 'song_manager.py', type: 'file', status: 'fixed', note: 'initial_days fixed, stream_count removed' },
-              { name: 'user_manager.py', type: 'file', status: 'pending', note: 'User profile, art tokens' },
-              { name: 'platform_oauth_manager.py', type: 'file', status: 'pending' },
+              { name: 'user_manager.py', type: 'file', status: 'audited', note: 'AUDITED: 1762 lines. Tier limits correct. Mixed timestamps. baseline_streams_per_day wrong name.' },
+              { name: 'platform_oauth_manager.py', type: 'file', status: 'audited', note: 'CRITICAL — writes to missing table noisemaker-platform-connections' },
             ]
           },
           {
@@ -241,7 +283,7 @@ export default function NoiseMAKERAuditor() {
             type: 'folder',
             children: [
               { name: '__init__.py', type: 'file', status: 'pending' },
-              { name: 'schemas.py', type: 'file', status: 'pending' },
+              { name: 'schemas.py', type: 'file', status: 'audited', note: '270 lines. All Pydantic request/response models' },
             ]
           },
           {
@@ -257,11 +299,11 @@ export default function NoiseMAKERAuditor() {
             type: 'folder',
             children: [
               { name: '__init__.py', type: 'file', status: 'pending' },
-              { name: 'auth.py', type: 'file', status: 'pending' },
+              { name: 'auth.py', type: 'file', status: 'audited', note: 'Signup/signin/exchange. Duplicate managers. Smart routing.' },
               { name: 'dashboard.py', type: 'file', status: 'pending' },
               { name: 'frank_art.py', type: 'file', status: 'fixed', note: '/my-collection removed. CORS fixed.' },
               { name: 'payment.py', type: 'file', status: 'pending' },
-              { name: 'platforms.py', type: 'file', status: 'pending' },
+              { name: 'platforms.py', type: 'file', status: 'audited', note: 'BUG: state=None in callback. Default limit fallback 3.' },
               { name: 'songs.py', type: 'file', status: 'audited', note: '4 endpoints mapped, deps traced' },
             ]
           },
@@ -307,10 +349,10 @@ export default function NoiseMAKERAuditor() {
             type: 'folder',
             children: [
               { name: '__init__.py', type: 'file', status: 'pending' },
-              { name: 'baseline_calculator.py', type: 'file', status: 'pending', note: 'Avg of 5 recent songs, rounds UP' },
-              { name: 'fire_mode_analyzer.py', type: 'file', status: 'pending' },
-              { name: 'popularity_tracker.py', type: 'file', status: 'pending', note: 'Daily tracking — why is history empty? (D2)' },
-              { name: 'spotipy_client.py', type: 'file', status: 'pending', note: 'Fetches popularity — not reaching DynamoDB (D1)' },
+              { name: 'baseline_calculator.py', type: 'file', status: 'audited', note: 'DEAD CODE — never called. Avg of 5 recent songs.' },
+              { name: 'fire_mode_analyzer.py', type: 'file', status: 'audited', note: 'Partial audit. 4-tier system. Depends on uncalculated baseline.' },
+              { name: 'popularity_tracker.py', type: 'file', status: 'audited', note: 'Never invoked — explains D1/D2.' },
+              { name: 'spotipy_client.py', type: 'file', status: 'audited', note: 'Works correctly but not invoked for tracking.' },
             ]
           },
           {
@@ -460,10 +502,11 @@ export default function NoiseMAKERAuditor() {
     { step: 1, name: "Signup", status: "complete" },
     { step: 2, name: "Payment (Stripe)", status: "complete" },
     { step: 3, name: "Milestone Video", status: "complete" },
-    { step: 4, name: "How It Works (1 & 2)", status: "complete" },
-    { step: 5, name: "Platform Connections", status: "complete" },
-    { step: 6, name: "Songs Upload (1-3)", status: "tested", highlight: true },
-    { step: 7, name: "Dashboard", status: "pending" },
+    { step: 4, name: "How It Works (1)", status: "pending", note: "Placeholder text — Tre needs to write copy" },
+    { step: 5, name: "Platform Connections", status: "issues", highlight: true, note: "Broken. May require app review/approval from platforms for OAuth scopes. Code needs deep inspection." },
+    { step: 6, name: "How It Works (2)", status: "pending", note: "Placeholder text — Tre needs to write copy" },
+    { step: 7, name: "Songs Upload (1-3)", status: "pending", note: "Unknown status — needs re-testing" },
+    { step: 8, name: "Dashboard", status: "pending", note: "Early development — just beginning" },
   ];
 
   // ============================================
