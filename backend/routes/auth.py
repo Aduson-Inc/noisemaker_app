@@ -177,12 +177,6 @@ async def signup(request: SignUpRequest, response: Response) -> AuthResponseEnha
         # Initialize milestone tracking
         user_manager.initialize_milestones(user_id)
 
-        # Initialize baseline collection
-        try:
-            user_manager.initialize_baseline_collection(user_id)
-        except:
-            pass
-
         # Award 3 art tokens for Frank's Garage
         try:
             user_manager.initialize_art_tokens(user_id, initial_tokens=3)
