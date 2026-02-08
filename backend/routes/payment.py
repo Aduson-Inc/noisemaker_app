@@ -19,6 +19,7 @@ from models.schemas import (
 from middleware.auth import get_current_user_id
 from data.user_manager import user_manager
 from auth.environment_loader import env_loader
+from spotify.baseline_calculator import baseline_calculator
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -172,6 +173,20 @@ async def confirm_payment(
         user_manager.achieve_milestone(user_id, 'first_payment')
         logger.info(f"First payment milestone achieved for user {user_id}")
 
+        # Calculate user's baseline popularity from Spotify catalog
+        try:
+            baseline_profile = user_manager.get_user_profile(user_id)
+            artist_id = baseline_profile.get('spotify_artist_id') if baseline_profile else None
+            if artist_id and not baseline_profile.get('current_baseline'):
+                baseline_calculator.calculate_baseline(user_id, artist_id)
+                logger.info(f"Baseline calculated for user {user_id}")
+            elif artist_id:
+                logger.info(f"Baseline already exists for user {user_id}, skipping")
+            else:
+                logger.warning(f"No spotify_artist_id for user {user_id}, skipping baseline")
+        except Exception as e:
+            logger.error(f"Baseline calculation failed for {user_id}: {e}")
+
         # Move onboarding to next step (platforms selection)
         user_manager.update_onboarding_status(user_id, 'platforms_pending')
         logger.info(f"Onboarding status updated to platforms_pending for user {user_id}")
@@ -242,6 +257,32 @@ async def stripe_webhook(request: Request):
                 user_manager.update_subscription_tier(user_id, tier)
                 user_manager.update_user_profile(user_id, {'account_status': 'active'})
                 logger.info(f"Subscription activated for user {user_id}: {tier}, account_status: active")
+
+                # Trigger first_payment milestone
+                try:
+                    user_manager.achieve_milestone(user_id, 'first_payment')
+                    logger.info(f"Webhook: first_payment milestone achieved for user {user_id}")
+                except Exception as e:
+                    logger.error(f"Webhook: milestone failed for {user_id}: {e}")
+
+                # Calculate baseline popularity (with idempotency guard)
+                try:
+                    webhook_profile = user_manager.get_user_profile(user_id)
+                    artist_id = webhook_profile.get('spotify_artist_id') if webhook_profile else None
+                    if artist_id and not webhook_profile.get('current_baseline'):
+                        baseline_calculator.calculate_baseline(user_id, artist_id)
+                        logger.info(f"Webhook: baseline calculated for user {user_id}")
+                    elif artist_id:
+                        logger.info(f"Webhook: baseline already exists for user {user_id}, skipping")
+                except Exception as e:
+                    logger.error(f"Webhook: baseline failed for {user_id}: {e}")
+
+                # Advance onboarding
+                try:
+                    user_manager.update_onboarding_status(user_id, 'platforms_pending')
+                    logger.info(f"Webhook: onboarding updated to platforms_pending for user {user_id}")
+                except Exception as e:
+                    logger.error(f"Webhook: onboarding update failed for {user_id}: {e}")
 
         elif event_type == 'customer.subscription.deleted':
             subscription = event['data']['object']

@@ -40,7 +40,7 @@ class BaselineCalculator:
         """Initialize baseline calculator."""
         self.spotify_api_base = 'https://api.spotify.com/v1'
         self.baselines_table = 'noisemaker-baselines'
-        self.default_baseline = 5  # For users with < 5 tracks
+        self.default_baseline = 0  # For users with zero tracks
 
         logger.info("Baseline calculator initialized")
 
@@ -184,25 +184,12 @@ class BaselineCalculator:
             # Take 5 most recent
             recent_5 = sorted_tracks[:5]
 
-            # If less than 5 tracks, use default baseline
-            if len(recent_5) < 5:
-                logger.info(f"User {user_id} has only {len(recent_5)} tracks, using default baseline")
-                return {
-                    'baseline': self.default_baseline,
-                    'tier': 1,
-                    'track_ids': [t['id'] for t in recent_5],
-                    'track_count': len(recent_5),
-                    'raw_average': 0.0,
-                    'success': True,
-                    'message': f'Only {len(recent_5)} tracks, using default baseline'
-                }
-
-            # Calculate simple average
+            # Calculate simple average of however many tracks we have
             total_popularity = sum(track['popularity'] for track in recent_5)
-            raw_average = total_popularity / 5
+            raw_average = total_popularity / len(recent_5)
 
             # Floor with minimum of 5 (not ceiling)
-            baseline = max(5, int(raw_average))
+            baseline = int(raw_average)
 
             # Determine tier
             if baseline <= 10:
@@ -219,7 +206,7 @@ class BaselineCalculator:
             logger.info(f"Calculated baseline for user {user_id}: {baseline} (Tier {tier})")
             logger.info(f"Used tracks: {[t['name'] for t in recent_5]}")
             logger.info(f"Popularity scores: {[t['popularity'] for t in recent_5]}")
-            logger.info(f"Raw average: {raw_average:.2f}, Floored to: {baseline} (min 5)")
+            logger.info(f"Raw average: {raw_average:.2f}, Floored to: {baseline}")
 
             # Store baseline in database
             self._store_baseline(user_id, baseline, tier, track_ids, len(recent_5), raw_average)

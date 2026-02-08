@@ -25,13 +25,10 @@ from auth.user_auth import UserAuth
 from data.user_manager import user_manager
 from data.platform_oauth_manager import oauth_manager as platform_oauth
 from data.song_manager import song_manager
-from notifications.milestone_tracker import MilestoneTracker
-
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 user_auth = UserAuth()
-milestone_tracker = MilestoneTracker()
 
 # Check if running in production (HTTPS)
 IS_PRODUCTION = os.getenv('FRONTEND_URL', '').startswith('https://')

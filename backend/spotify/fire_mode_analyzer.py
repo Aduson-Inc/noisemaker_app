@@ -1,19 +1,20 @@
 """
-Fire Mode Analyzer Module
-Implements the 4-tier Fire Mode system with phase-based maintenance requirements.
-All increases are ABSOLUTE points, not percentages.
+Fire Mode Analyzer — NOiSEMaKER
+Determines fire mode eligibility, maintenance, and exit for songs
+based on Spotify popularity vs user baseline.
 
-Author: Senior Python Backend Engineer
-Version: 1.0
-Security Level: Production-ready
-Specification: PHASE_A_PLANNING_AND_FIRE_MODE_SPECIFICATION.md
+System:
+- Entry: song popularity must exceed user baseline (strictly greater)
+- 5-day guaranteed window once activated
+- Maintenance after day 5: exit if below peak for 2 consecutive days
+- Re-entry: must exceed previous fire mode peak by at least 1
+- 4 levels based on baseline (informational only, same rules for all)
 """
 
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 from datetime import datetime, timedelta
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -22,17 +23,24 @@ class FireModeAnalyzer:
     """
     Analyzes songs for Fire Mode eligibility and maintenance.
 
-    4-Tier System:
-    - Tier 1 (0-10% baseline): 3-phase maintenance
-    - Tier 2 (11-20% baseline): 3-phase maintenance
-    - Tier 3 (21-30% baseline): 3-phase maintenance
-    - Tier 4 (31-100% baseline): 7-day lookback maintenance
-
-    All increases are ABSOLUTE points (e.g., +2 points, not 2% of current score).
+    Levels (informational — same rules for all):
+    - Level 1 (baseline 0-3): Rising
+    - Level 2 (baseline 4-10): Building
+    - Level 3 (baseline 11-25): Established
+    - Level 4 (baseline 26+): Breaking Out
     """
 
+    LEVEL_BRACKETS = [
+        (3, 1, "Rising"),
+        (10, 2, "Building"),
+        (25, 3, "Established"),
+        (None, 4, "Breaking Out"),
+    ]
+
+    GUARANTEED_DAYS = 5
+    CONSECUTIVE_DAYS_TO_EXIT = 2
+
     def __init__(self):
-        """Initialize Fire Mode analyzer."""
         logger.info("Fire Mode analyzer initialized")
 
     def calculate_fire_mode_eligibility(
@@ -40,358 +48,177 @@ class FireModeAnalyzer:
         user_baseline: int,
         song_current_popularity: int,
         song_fire_mode_active: bool,
-        song_fire_mode_start_date: str,
+        song_fire_mode_start_date: Optional[str],
         song_peak_popularity: int,
-        song_popularity_history: List[Dict[str, Any]],
-        has_been_on_fire_before: bool = False
+        days_below_peak: int,
+        song_previous_fire_peak: int = 0
     ) -> Dict[str, Any]:
         """
-        Determines if a song qualifies for Fire Mode or should maintain/exit Fire Mode.
+        Determine fire mode status for a song.
 
         Args:
-            user_baseline (int): User's baseline popularity average (0-100)
-            song_current_popularity (int): Current popularity score for this song
-            song_fire_mode_active (bool): Is Fire Mode currently active for this song?
-            song_fire_mode_start_date (str): When Fire Mode started (ISO format)
-            song_peak_popularity (int): Highest popularity score achieved while in Fire Mode
-            song_popularity_history (List[Dict]): Recent daily popularity scores
-                                                  [{date: str, score: int}, ...]
-            has_been_on_fire_before (bool): Has this song ever been on Fire Mode before?
-                                            Used to determine entry vs re-entry logic.
+            user_baseline: User's baseline popularity (0-100)
+            song_current_popularity: Current Spotify popularity
+            song_fire_mode_active: Is fire mode currently active?
+            song_fire_mode_start_date: When fire mode started (ISO format or None)
+            song_peak_popularity: Highest popularity during current fire mode
+            days_below_peak: Consecutive days below peak (caller tracks this)
+            song_previous_fire_peak: Peak from LAST fire mode session (0 if never)
 
         Returns:
-            dict with:
-                - eligible: bool - Can enter Fire Mode
-                - should_maintain: bool - Should stay in Fire Mode
-                - should_exit: bool - Should exit Fire Mode
-                - tier: int (1-4)
-                - phase: Optional[int] (1-3 for Tiers 1-3, None for Tier 4)
-                - check_frequency: str ('daily')
-                - reason: str - Explanation of decision
+            Dict with eligible, should_maintain, should_exit, level, level_label,
+            new_peak, days_below_peak, reason
         """
+        level, level_label = self.determine_level_from_baseline(user_baseline)
+        new_peak = False
 
-        # Determine tier based on baseline
-        if user_baseline <= 10:
-            tier = 1
-        elif user_baseline <= 20:
-            tier = 2
-        elif user_baseline <= 30:
-            tier = 3
-        else:  # 31-100
-            tier = 4
-
-        # Check if song can ENTER Fire Mode (not currently active)
+        # --- SONG IS NOT IN FIRE MODE ---
         if not song_fire_mode_active:
-            if not has_been_on_fire_before:
-                # FIRST ENTRY: Simple baseline check
-                eligible = song_current_popularity >= user_baseline
-                reason = f'First entry check: Song {song_current_popularity} vs baseline {user_baseline}'
-            else:
-                # RE-ENTRY: Must meet tier maintenance requirements
-                # This prevents songs from bouncing in/out easily
-                eligible = self._check_reentry_requirements(
-                    tier, song_popularity_history, song_current_popularity, user_baseline
+            if song_previous_fire_peak > 0:
+                # RE-ENTRY: must exceed previous peak by at least 1
+                eligible = song_current_popularity > song_previous_fire_peak
+                reason = (
+                    f"Re-entry check: popularity {song_current_popularity} "
+                    f"vs previous peak {song_previous_fire_peak} "
+                    f"(need {song_previous_fire_peak + 1}+)"
                 )
-                reason = f'Re-entry check (tier {tier}): Song {song_current_popularity} must meet maintenance requirements'
+            else:
+                # FIRST ENTRY: must be strictly greater than baseline
+                eligible = song_current_popularity > user_baseline
+                reason = (
+                    f"First entry check: popularity {song_current_popularity} "
+                    f"vs baseline {user_baseline} (need {user_baseline + 1}+)"
+                )
 
             return {
                 'eligible': eligible,
                 'should_maintain': False,
                 'should_exit': False,
-                'tier': tier,
-                'phase': None,
-                'check_frequency': 'daily',
+                'level': level,
+                'level_label': level_label,
+                'new_peak': False,
+                'days_below_peak': 0,
                 'reason': reason
             }
 
-        # Song is ALREADY in Fire Mode - check maintenance requirements
+        # --- SONG IS IN FIRE MODE ---
 
-        # TIER 4: Daily check with 7-day lookback, need +3 points over 7 days
-        if tier == 4:
-            seven_days_ago_score = self._get_score_n_days_ago(song_popularity_history, 7)
+        # Check if song set a new peak
+        if song_current_popularity > song_peak_popularity:
+            new_peak = True
 
-            if seven_days_ago_score is None:
-                # Not enough history yet (less than 7 days), maintain Fire Mode
-                return {
-                    'eligible': True,
-                    'should_maintain': True,
-                    'should_exit': False,
-                    'tier': tier,
-                    'phase': None,
-                    'check_frequency': 'daily',
-                    'reason': 'Tier 4: Insufficient 7-day history (guaranteed 7 days minimum)'
-                }
+        # Calculate days in fire mode
+        days_in_fire_mode = self._days_since(song_fire_mode_start_date)
 
-            increase_needed = 3  # ABSOLUTE points, not percentage
-            actual_increase = song_current_popularity - seven_days_ago_score
-            should_maintain = actual_increase >= increase_needed
-
-            return {
-                'eligible': True,
-                'should_maintain': should_maintain,
-                'should_exit': not should_maintain,
-                'tier': tier,
-                'phase': None,
-                'check_frequency': 'daily',
-                'reason': f'Tier 4: 7-day increase {actual_increase} points (need +{increase_needed} points)'
-            }
-
-        # TIERS 1-3: Daily check with phase-based requirements
-
-        # Determine which phase the song is in based on current popularity
-        if song_current_popularity < 20:
-            # Phase 1: Below 20% - need +2 points every 2 days
-            phase = 1
-            increase_needed = 2  # ABSOLUTE points
-            check_days = 2
-        elif song_current_popularity < 30:
-            # Phase 2: 20-30% - need +1 point every 2 days
-            phase = 2
-            increase_needed = 1  # ABSOLUTE points
-            check_days = 2
-        else:
-            # Phase 3: Above 30% - maintain peak, 3 days grace
-            phase = 3
-
-            # Check if we've had no increase for 3 days
-            three_days_ago_score = self._get_score_n_days_ago(song_popularity_history, 3)
-
-            if three_days_ago_score is None:
-                # Not enough history, maintain
-                return {
-                    'eligible': True,
-                    'should_maintain': True,
-                    'should_exit': False,
-                    'tier': tier,
-                    'phase': phase,
-                    'check_frequency': 'daily',
-                    'reason': f'Phase 3: Insufficient history, maintaining'
-                }
-
-            # No increase in 3 days = exit Fire Mode
-            if song_current_popularity <= three_days_ago_score:
-                return {
-                    'eligible': True,
-                    'should_maintain': False,
-                    'should_exit': True,
-                    'tier': tier,
-                    'phase': phase,
-                    'check_frequency': 'daily',
-                    'reason': f'Phase 3: No increase in 3 days ({three_days_ago_score} -> {song_current_popularity})'
-                }
-
-            # Check if +1 point past peak = reactivate/maintain
-            if song_current_popularity >= song_peak_popularity + 1:
-                return {
-                    'eligible': True,
-                    'should_maintain': True,
-                    'should_exit': False,
-                    'tier': tier,
-                    'phase': phase,
-                    'check_frequency': 'daily',
-                    'reason': f'Phase 3: Exceeded peak by +1 point ({song_peak_popularity} -> {song_current_popularity})'
-                }
-
-            # Maintaining within peak
+        # GUARANTEED WINDOW: first 5 days, always maintain
+        if days_in_fire_mode < self.GUARANTEED_DAYS:
             return {
                 'eligible': True,
                 'should_maintain': True,
                 'should_exit': False,
-                'tier': tier,
-                'phase': phase,
-                'check_frequency': 'daily',
-                'reason': f'Phase 3: Maintaining at {song_current_popularity}'
+                'level': level,
+                'level_label': level_label,
+                'new_peak': new_peak,
+                'days_below_peak': 0,
+                'reason': (
+                    f"Guaranteed window: day {days_in_fire_mode + 1} of "
+                    f"{self.GUARANTEED_DAYS}"
+                    f"{' (new peak!)' if new_peak else ''}"
+                )
             }
 
-        # Phase 1 or 2: Check if growth requirement met
-        n_days_ago_score = self._get_score_n_days_ago(song_popularity_history, check_days)
-
-        if n_days_ago_score is None:
-            # Not enough history yet, maintain
+        # MAINTENANCE: after day 5
+        if song_current_popularity >= song_peak_popularity:
+            # At or above peak — reset below-peak counter
             return {
                 'eligible': True,
                 'should_maintain': True,
                 'should_exit': False,
-                'tier': tier,
-                'phase': phase,
-                'check_frequency': 'daily',
-                'reason': f'Phase {phase}: Insufficient {check_days}-day history, maintaining'
+                'level': level,
+                'level_label': level_label,
+                'new_peak': new_peak,
+                'days_below_peak': 0,
+                'reason': (
+                    f"Maintenance: at/above peak "
+                    f"({song_current_popularity} >= {song_peak_popularity})"
+                    f"{' — new peak!' if new_peak else ''}"
+                )
             }
 
-        actual_increase = song_current_popularity - n_days_ago_score
-        should_maintain = actual_increase >= increase_needed
+        # Below peak
+        updated_days_below = days_below_peak + 1
 
+        if updated_days_below >= self.CONSECUTIVE_DAYS_TO_EXIT:
+            # EXIT: 2 consecutive days below peak
+            return {
+                'eligible': False,
+                'should_maintain': False,
+                'should_exit': True,
+                'level': level,
+                'level_label': level_label,
+                'new_peak': False,
+                'days_below_peak': updated_days_below,
+                'reason': (
+                    f"Exit: {updated_days_below} consecutive days below peak "
+                    f"({song_current_popularity} < {song_peak_popularity})"
+                )
+            }
+
+        # Below peak but haven't hit 2 consecutive days yet
         return {
             'eligible': True,
-            'should_maintain': should_maintain,
-            'should_exit': not should_maintain,
-            'tier': tier,
-            'phase': phase,
-            'check_frequency': 'daily',
-            'reason': f'Phase {phase}: {check_days}-day increase {actual_increase} points (need +{increase_needed} points)'
+            'should_maintain': True,
+            'should_exit': False,
+            'level': level,
+            'level_label': level_label,
+            'new_peak': False,
+            'days_below_peak': updated_days_below,
+            'reason': (
+                f"Maintenance: below peak day {updated_days_below} of "
+                f"{self.CONSECUTIVE_DAYS_TO_EXIT} "
+                f"({song_current_popularity} < {song_peak_popularity})"
+            )
         }
 
-    def _get_score_n_days_ago(
-        self,
-        popularity_history: List[Dict[str, Any]],
-        days: int
-    ) -> Optional[int]:
-        """
-        Helper function to get popularity score from N days ago.
-
-        Args:
-            popularity_history (List[Dict]): List of {date: str, score: int} sorted by date
-            days (int): How many days back to look
-
-        Returns:
-            Optional[int]: Popularity score from N days ago, or None if not available
-        """
+    def _days_since(self, iso_date: Optional[str]) -> int:
+        """Calculate days since a given ISO date string."""
+        if not iso_date:
+            return 0
         try:
-            target_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            start = datetime.fromisoformat(iso_date.replace('Z', '+00:00'))
+            now = datetime.utcnow()
+            if start.tzinfo is not None:
+                start = start.replace(tzinfo=None)
+            delta = now - start
+            return max(0, delta.days)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error parsing fire mode start date '{iso_date}': {e}")
+            return 0
 
-            for entry in popularity_history:
-                if entry['date'] == target_date:
-                    return entry['score']
-
-            logger.debug(f"No data found for {days} days ago (target: {target_date})")
-            return None
-
-        except Exception as e:
-            logger.error(f"Error getting score from {days} days ago: {str(e)}")
-            return None
-
-    def _check_reentry_requirements(
-        self,
-        tier: int,
-        popularity_history: List[Dict[str, Any]],
-        current_popularity: int,
-        user_baseline: int
-    ) -> bool:
+    def determine_level_from_baseline(self, baseline: int) -> tuple:
         """
-        Check if song meets tier requirements for RE-ENTERING Fire Mode.
-
-        Re-entry is harder than first entry. Songs that exited Fire Mode must
-        demonstrate they're growing again before re-entering. This prevents
-        songs from bouncing in and out of Fire Mode repeatedly.
-
-        Re-entry window is from TODAY looking back N days (not from exit date).
-
-        Args:
-            tier (int): User's tier (1-4)
-            popularity_history (List[Dict]): Recent daily popularity scores
-            current_popularity (int): Current popularity score
-            user_baseline (int): User's baseline for fallback
+        Determine level and label from baseline popularity.
 
         Returns:
-            bool: True if song meets re-entry requirements
+            Tuple of (level: int, label: str)
         """
-        try:
-            if tier == 4:
-                # Tier 4: Need +3 points over 7 days (same as maintenance)
-                seven_days_ago = self._get_score_n_days_ago(popularity_history, 7)
-                if seven_days_ago is None:
-                    # Not enough history - require baseline check as fallback
-                    logger.info(f"Re-entry Tier 4: Insufficient history, using baseline check")
-                    return current_popularity >= user_baseline
-                eligible = current_popularity >= seven_days_ago + 3
-                logger.info(f"Re-entry Tier 4: {current_popularity} vs {seven_days_ago}+3 = {eligible}")
-                return eligible
+        for max_val, level, label in self.LEVEL_BRACKETS:
+            if max_val is None or baseline <= max_val:
+                return level, label
+        return 4, "Breaking Out"
 
-            # Tiers 1-3: Check based on current popularity phase
-            if current_popularity < 20:
-                # Phase 1 equivalent: Need +2 points over 2 days
-                two_days_ago = self._get_score_n_days_ago(popularity_history, 2)
-                if two_days_ago is None:
-                    logger.info(f"Re-entry Phase 1: Insufficient history, using baseline check")
-                    return current_popularity >= user_baseline
-                eligible = current_popularity >= two_days_ago + 2
-                logger.info(f"Re-entry Phase 1: {current_popularity} vs {two_days_ago}+2 = {eligible}")
-                return eligible
-
-            elif current_popularity < 30:
-                # Phase 2 equivalent: Need +1 point over 2 days
-                two_days_ago = self._get_score_n_days_ago(popularity_history, 2)
-                if two_days_ago is None:
-                    logger.info(f"Re-entry Phase 2: Insufficient history, using baseline check")
-                    return current_popularity >= user_baseline
-                eligible = current_popularity >= two_days_ago + 1
-                logger.info(f"Re-entry Phase 2: {current_popularity} vs {two_days_ago}+1 = {eligible}")
-                return eligible
-
-            else:
-                # Phase 3 equivalent (30+): Need growth in last 3 days
-                three_days_ago = self._get_score_n_days_ago(popularity_history, 3)
-                if three_days_ago is None:
-                    logger.info(f"Re-entry Phase 3: Insufficient history, using baseline check")
-                    return current_popularity >= user_baseline
-                eligible = current_popularity > three_days_ago
-                logger.info(f"Re-entry Phase 3: {current_popularity} > {three_days_ago} = {eligible}")
-                return eligible
-
-        except Exception as e:
-            logger.error(f"Error checking re-entry requirements: {str(e)}")
-            # Fallback to baseline check on error
-            return current_popularity >= user_baseline
-
-    def determine_tier_from_baseline(self, baseline: int) -> int:
-        """
-        Determine tier from baseline score.
-
-        Args:
-            baseline (int): User's baseline score
-
-        Returns:
-            int: Tier 1-4
-        """
-        if baseline <= 10:
-            return 1
-        elif baseline <= 20:
-            return 2
-        elif baseline <= 30:
-            return 3
-        else:
-            return 4
-
-    def get_tier_description(self, tier: int) -> str:
-        """
-        Get human-readable tier description.
-
-        Args:
-            tier (int): Tier 1-4
-
-        Returns:
-            str: Tier description
-        """
+    def get_level_description(self, level: int) -> str:
+        """Get human-readable level description."""
         descriptions = {
-            1: "Emerging Artists (0-10% baseline)",
-            2: "Growing Artists (11-20% baseline)",
-            3: "Established Artists (21-30% baseline)",
-            4: "High-Performing Artists (31-100% baseline)"
+            1: "Rising (baseline 0-3)",
+            2: "Building (baseline 4-10)",
+            3: "Established (baseline 11-25)",
+            4: "Breaking Out (baseline 26+)"
         }
-        return descriptions.get(tier, "Unknown Tier")
-
-    def get_phase_description(self, phase: Optional[int]) -> str:
-        """
-        Get human-readable phase description.
-
-        Args:
-            phase (Optional[int]): Phase 1-3, or None for Tier 4
-
-        Returns:
-            str: Phase description
-        """
-        if phase is None:
-            return "Tier 4 (7-day lookback)"
-
-        descriptions = {
-            1: "Phase 1: Below 20% (+2 points every 2 days)",
-            2: "Phase 2: 20-30% (+1 point every 2 days)",
-            3: "Phase 3: Above 30% (maintain peak)"
-        }
-        return descriptions.get(phase, "Unknown Phase")
+        return descriptions.get(level, "Unknown Level")
 
 
-# Global Fire Mode analyzer instance
+# Global instance
 fire_mode_analyzer = FireModeAnalyzer()
 
 
@@ -400,47 +227,28 @@ def check_fire_mode(
     user_baseline: int,
     song_current_popularity: int,
     song_fire_mode_active: bool,
-    song_fire_mode_start_date: str,
+    song_fire_mode_start_date: Optional[str],
     song_peak_popularity: int,
-    song_popularity_history: List[Dict[str, Any]],
-    has_been_on_fire_before: bool = False
+    days_below_peak: int,
+    song_previous_fire_peak: int = 0
 ) -> Dict[str, Any]:
-    """
-    Check Fire Mode eligibility for a song.
-
-    Args:
-        user_baseline (int): User's baseline score
-        song_current_popularity (int): Current song popularity
-        song_fire_mode_active (bool): Is Fire Mode currently active?
-        song_fire_mode_start_date (str): When Fire Mode started (ISO)
-        song_peak_popularity (int): Peak score while in Fire Mode
-        song_popularity_history (List[Dict]): Daily popularity history
-        has_been_on_fire_before (bool): Has this song been on Fire Mode before?
-
-    Returns:
-        Dict: Fire Mode analysis results
-    """
+    """Check fire mode status for a song."""
     return fire_mode_analyzer.calculate_fire_mode_eligibility(
         user_baseline,
         song_current_popularity,
         song_fire_mode_active,
         song_fire_mode_start_date,
         song_peak_popularity,
-        song_popularity_history,
-        has_been_on_fire_before
+        days_below_peak,
+        song_previous_fire_peak
     )
 
 
-def get_tier(baseline: int) -> int:
-    """Determine tier from baseline."""
-    return fire_mode_analyzer.determine_tier_from_baseline(baseline)
+def get_level(baseline: int) -> tuple:
+    """Determine level and label from baseline."""
+    return fire_mode_analyzer.determine_level_from_baseline(baseline)
 
 
-def describe_tier(tier: int) -> str:
-    """Get tier description."""
-    return fire_mode_analyzer.get_tier_description(tier)
-
-
-def describe_phase(phase: Optional[int]) -> str:
-    """Get phase description."""
-    return fire_mode_analyzer.get_phase_description(phase)
+def describe_level(level: int) -> str:
+    """Get level description."""
+    return fire_mode_analyzer.get_level_description(level)

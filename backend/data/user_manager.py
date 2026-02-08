@@ -1,11 +1,8 @@
 """
-User Manager Module  
-Handles user account data operations and subscription management.
-Integrates with authentication and environment variable systems.
-
-Author: Senior Python Backend Engineer
-Version: 1.0
-Security Level: Production-ready
+User Manager Module
+Handles user profiles, subscriptions, onboarding, milestones, and art tokens.
+All operations target the noisemaker-users DynamoDB table.
+Milestone history is stored in the noisemaker-milestones table.
 """
 
 from typing import Dict, List, Optional, Any
@@ -554,209 +551,6 @@ class UserManager:
                 'error': f'Internal error: {str(e)}'
             }
 
-    def initialize_baseline_collection(self, user_id: str) -> Dict[str, Any]:
-        """
-        Initialize baseline collection tracking for a new user.
-        Called when user signs up - sets baseline_status to 'not_started'.
-        
-        Args:
-            user_id: User's unique identifier
-            
-        Returns:
-            Dict with success status and message
-        """
-        try:
-            logger.info(f"Initializing baseline collection for user: {user_id}")
-            
-            key = {'user_id': user_id}
-            updates = {
-                'baseline_streams_per_day': 0,
-                'baseline_calculated_at': '',
-                'baseline_status': 'not_started',
-                'fire_mode_available': False,
-                'baseline_collection_start': '',
-                'baseline_last_updated': datetime.utcnow().isoformat(),
-                'baseline_spotify_tracks': []
-            }
-            
-            success = dynamodb_client.update_item(self.table_name, key, updates)
-            
-            if success:
-                logger.info(f"Baseline collection initialized for user: {user_id}")
-                return {
-                    'success': True,
-                    'message': 'Baseline collection initialized',
-                    'baseline_status': 'not_started'
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': 'Failed to initialize baseline collection'
-                }
-            
-        except Exception as e:
-            logger.error(f"Error initializing baseline collection for {user_id}: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-    def start_baseline_collection(self, user_id: str, spotify_track_ids: List[str]) -> Dict[str, Any]:
-        """
-        Start baseline data collection (Day 1 process).
-        Stores 5 Spotify track IDs and sets status to 'collecting'.
-        
-        Args:
-            user_id: User's unique identifier
-            spotify_track_ids: List of 5 Spotify track IDs from user's latest songs
-            
-        Returns:
-            Dict with success status and collection info
-        """
-        try:
-            logger.info(f"Starting baseline collection for user: {user_id}")
-            
-            # Validate track IDs
-            if not spotify_track_ids or len(spotify_track_ids) != 5:
-                return {
-                    'success': False,
-                    'error': 'Must provide exactly 5 Spotify track IDs'
-                }
-            
-            collection_start = datetime.utcnow().isoformat()
-            
-            key = {'user_id': user_id}
-            updates = {
-                'baseline_status': 'collecting',
-                'baseline_collection_start': collection_start,
-                'baseline_spotify_tracks': spotify_track_ids,
-                'baseline_last_updated': collection_start
-            }
-            
-            success = dynamodb_client.update_item(self.table_name, key, updates)
-            
-            if success:
-                logger.info(f"Baseline collection started for user: {user_id} with {len(spotify_track_ids)} tracks")
-                return {
-                    'success': True,
-                    'message': 'Baseline collection started',
-                    'baseline_status': 'collecting',
-                    'collection_start': collection_start,
-                    'track_count': len(spotify_track_ids),
-                    'tracks': spotify_track_ids
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': 'Failed to start baseline collection'
-                }
-            
-        except Exception as e:
-            logger.error(f"Error starting baseline collection for {user_id}: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-    def complete_baseline_calculation(self, user_id: str, baseline_value: float) -> Dict[str, Any]:
-        """
-        Complete baseline calculation (Day 7 process).
-        Stores final baseline (minimum 50 streams/day) and enables Fire Mode.
-        
-        Args:
-            user_id: User's unique identifier
-            baseline_value: Calculated average streams per day (will be set to min 50)
-            
-        Returns:
-            Dict with success status and final baseline info
-        """
-        try:
-            logger.info(f"Completing baseline calculation for user: {user_id} with value: {baseline_value}")
-            
-            # Enforce minimum baseline of 50 streams/day
-            final_baseline = max(50, int(baseline_value))
-            calculated_at = datetime.utcnow().isoformat()
-            
-            key = {'user_id': user_id}
-            updates = {
-                'baseline_streams_per_day': final_baseline,
-                'baseline_calculated_at': calculated_at,
-                'baseline_status': 'calculated',
-                'fire_mode_available': True,
-                'baseline_last_updated': calculated_at
-            }
-            
-            success = dynamodb_client.update_item(self.table_name, key, updates)
-            
-            if success:
-                logger.info(f"Baseline calculation completed for user: {user_id} - Final baseline: {final_baseline} streams/day")
-                return {
-                    'success': True,
-                    'message': 'Baseline calculation completed',
-                    'baseline_streams_per_day': final_baseline,
-                    'baseline_status': 'calculated',
-                    'fire_mode_available': True,
-                    'calculated_at': calculated_at,
-                    'was_adjusted': baseline_value < 50
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': 'Failed to complete baseline calculation'
-                }
-            
-        except Exception as e:
-            logger.error(f"Error completing baseline calculation for {user_id}: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-    def get_user_baseline_info(self, user_id: str) -> Dict[str, Any]:
-        """
-        Retrieve all baseline tracking information for a user.
-        
-        Args:
-            user_id: User's unique identifier
-            
-        Returns:
-            Dict with all baseline fields or error
-        """
-        try:
-            logger.info(f"Fetching baseline info for user: {user_id}")
-            
-            key = {'user_id': user_id}
-            user_data = dynamodb_client.get_item(self.table_name, key)
-            
-            if not user_data:
-                return {
-                    'success': False,
-                    'error': 'User not found'
-                }
-            
-            # Extract baseline fields with defaults
-            baseline_info = {
-                'success': True,
-                'user_id': user_id,
-                'baseline_streams_per_day': int(user_data.get('baseline_streams_per_day', 0)),
-                'baseline_calculated_at': user_data.get('baseline_calculated_at', ''),
-                'baseline_status': user_data.get('baseline_status', 'not_started'),
-                'fire_mode_available': user_data.get('fire_mode_available', False),
-                'baseline_collection_start': user_data.get('baseline_collection_start', ''),
-                'baseline_last_updated': user_data.get('baseline_last_updated', ''),
-                'baseline_spotify_tracks': user_data.get('baseline_spotify_tracks', [])
-            }
-            
-            logger.info(f"Baseline info retrieved for user: {user_id} - Status: {baseline_info['baseline_status']}")
-            return baseline_info
-            
-        except Exception as e:
-            logger.error(f"Error fetching baseline info for {user_id}: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
     def mark_spotify_connected(self, user_id: str, artist_id: str) -> Dict[str, Any]:
         """
         Mark that user has connected their Spotify account.
@@ -1036,311 +830,183 @@ class UserManager:
     # MILESTONE TRACKING
     # ============================================================================
 
-    # Milestone types and their S3 video paths
+    # Milestone types and configuration
     MILESTONE_TYPES = {
+        # FIRST PAYMENT
         'first_payment': {
+            'category': 'payment',
             'description': 'First successful subscription payment',
-            'video_path': 'Milestones/milestone_first_payment/milestone_first_payment.MP4',
-            'one_time': True
+            'media_type': 'video',
+            'one_time': True,
+            'threshold': None,  # Triggered by payment event, not a number
         },
-        '100_streams': {
-            'description': 'Reached 100 total streams',
-            'video_path': 'Milestones/milestone_100_streams/milestone_100_streams.mov',
-            'one_time': True
-        },
-        '1000_streams': {
-            'description': 'Reached 1,000 total streams',
-            'video_path': 'Milestones/milestone_1000_streams/milestone_1000_streams.mov',
-            'one_time': True
-        },
-        '10000_streams': {
-            'description': 'Reached 10,000 total streams',
-            'video_path': 'Milestones/milestone_10000_streams/milestone_10000_streams.mov',
-            'one_time': True
-        },
-        '25000_streams': {
-            'description': 'Reached 25,000 total streams - Custom AI video',
-            'video_path': None,  # Generated dynamically
-            'one_time': True
-        }
+        # FOLLOWER GROWTH (relative to signup count)
+        'followers_100': {'category': 'followers', 'description': 'Gained 100 followers', 'media_type': 'video', 'one_time': True, 'threshold': 100},
+        'followers_250': {'category': 'followers', 'description': 'Gained 250 followers', 'media_type': 'jingle', 'one_time': True, 'threshold': 250},
+        'followers_500': {'category': 'followers', 'description': 'Gained 500 followers', 'media_type': 'video', 'one_time': True, 'threshold': 500},
+        'followers_750': {'category': 'followers', 'description': 'Gained 750 followers', 'media_type': 'jingle', 'one_time': True, 'threshold': 750},
+        'followers_1000': {'category': 'followers', 'description': 'Gained 1,000 followers', 'media_type': 'video', 'one_time': True, 'threshold': 1000},
+        'followers_1500': {'category': 'followers', 'description': 'Gained 1,500 followers', 'media_type': 'jingle', 'one_time': True, 'threshold': 1500},
+        'followers_2000': {'category': 'followers', 'description': 'Gained 2,000 followers', 'media_type': 'video', 'one_time': True, 'threshold': 2000},
+        'followers_3000': {'category': 'followers', 'description': 'Gained 3,000 followers', 'media_type': 'jingle', 'one_time': True, 'threshold': 3000},
+        'followers_5000': {'category': 'followers', 'description': 'Gained 5,000 followers', 'media_type': 'video', 'one_time': True, 'threshold': 5000},
+        'followers_10000': {'category': 'followers', 'description': 'Gained 10,000 followers', 'media_type': 'video', 'one_time': True, 'threshold': 10000},
+        'followers_25000': {'category': 'followers', 'description': 'Gained 25,000 followers', 'media_type': 'video', 'one_time': True, 'threshold': 25000},
+        'followers_50000': {'category': 'followers', 'description': 'Gained 50,000 followers', 'media_type': 'video', 'one_time': True, 'threshold': 50000},
+        'followers_100000': {'category': 'followers', 'description': 'Gained 100,000 followers', 'media_type': 'video', 'one_time': True, 'threshold': 100000},
+        # SONG POPULARITY (per song, can trigger multiple times for different songs)
+        'song_popularity_5': {'category': 'popularity', 'description': 'Song reached popularity 5', 'media_type': 'jingle', 'one_time': False, 'threshold': 5},
+        'song_popularity_10': {'category': 'popularity', 'description': 'Song reached popularity 10', 'media_type': 'jingle', 'one_time': False, 'threshold': 10},
+        'song_popularity_15': {'category': 'popularity', 'description': 'Song reached popularity 15', 'media_type': 'video', 'one_time': False, 'threshold': 15},
+        'song_popularity_20': {'category': 'popularity', 'description': 'Song reached popularity 20', 'media_type': 'video', 'one_time': False, 'threshold': 20},
+        'song_popularity_25': {'category': 'popularity', 'description': 'Song reached popularity 25', 'media_type': 'video', 'one_time': False, 'threshold': 25},
+        'song_popularity_30': {'category': 'popularity', 'description': 'Song reached popularity 30', 'media_type': 'video', 'one_time': False, 'threshold': 30},
+        # FIRE MODE
+        'first_fire_mode': {'category': 'fire_mode', 'description': 'First song entered Fire Mode', 'media_type': 'video', 'one_time': True, 'threshold': 1},
+        'fire_mode_3': {'category': 'fire_mode', 'description': '3 songs have been on fire', 'media_type': 'jingle', 'one_time': True, 'threshold': 3},
+        'fire_mode_10': {'category': 'fire_mode', 'description': '10 songs have been on fire', 'media_type': 'video', 'one_time': True, 'threshold': 10},
+        # POSTING ACTIVITY
+        'posts_100': {'category': 'posts', 'description': '100 posts made', 'media_type': 'jingle', 'one_time': True, 'threshold': 100},
+        'posts_500': {'category': 'posts', 'description': '500 posts made', 'media_type': 'video', 'one_time': True, 'threshold': 500},
+        'posts_1000': {'category': 'posts', 'description': '1,000 posts made', 'media_type': 'video', 'one_time': True, 'threshold': 1000},
+        # LONGEVITY
+        'active_3_months': {'category': 'longevity', 'description': '3 months active', 'media_type': 'jingle', 'one_time': True, 'threshold': 90},
+        'active_6_months': {'category': 'longevity', 'description': '6 months active', 'media_type': 'video', 'one_time': True, 'threshold': 180},
+        'active_1_year': {'category': 'longevity', 'description': '1 year active', 'media_type': 'video', 'one_time': True, 'threshold': 365},
     }
 
     S3_BUCKET = 'noisemakerpromobydoowopp'
 
     def initialize_milestones(self, user_id: str) -> Dict[str, Any]:
-        """
-        Initialize milestone tracking for a new user.
-        Creates empty milestone records for all milestone types.
-
-        Args:
-            user_id: User's unique identifier
-
-        Returns:
-            Dict with success status
-        """
+        """Initialize milestone tracking for a new user."""
         try:
             logger.info(f"Initializing milestones for user: {user_id}")
-
-            # Create milestone tracking structure
-            milestones = {}
-            for milestone_type in self.MILESTONE_TYPES.keys():
-                milestones[milestone_type] = {
-                    'achieved_at': None,
-                    'video_played': False,
-                    'video_played_at': None
-                }
-
             key = {'user_id': user_id}
             updates = {
-                'milestones': milestones,
+                'pending_milestone': None,
+                'total_fire_modes': 0,
+                'total_posts': 0,
                 'milestones_initialized_at': datetime.utcnow().isoformat()
             }
-
             success = dynamodb_client.update_item(self.table_name, key, updates)
-
             if success:
                 logger.info(f"Milestones initialized for user: {user_id}")
-                return {
-                    'success': True,
-                    'message': 'Milestones initialized',
-                    'milestone_types': list(self.MILESTONE_TYPES.keys())
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': 'Failed to initialize milestones'
-                }
-
+                return {'success': True, 'message': 'Milestones initialized'}
+            return {'success': False, 'error': 'Failed to initialize milestones'}
         except Exception as e:
             logger.error(f"Error initializing milestones for {user_id}: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            return {'success': False, 'error': str(e)}
 
-    def achieve_milestone(self, user_id: str, milestone_type: str) -> Dict[str, Any]:
+    def achieve_milestone(self, user_id: str, milestone_type: str, song_id: str = None) -> Dict[str, Any]:
         """
-        Mark a milestone as achieved for a user.
-
-        Args:
-            user_id: User's unique identifier
-            milestone_type: Type of milestone achieved
-
-        Returns:
-            Dict with achievement info and video URL if applicable
+        Mark a milestone as achieved. Writes to milestones table and sets pending_milestone on user profile.
+        song_id is required for song_popularity milestones (per-song tracking).
         """
         try:
             logger.info(f"Achieving milestone {milestone_type} for user: {user_id}")
-
             if milestone_type not in self.MILESTONE_TYPES:
-                return {
-                    'success': False,
-                    'error': f'Invalid milestone type: {milestone_type}',
-                    'valid_types': list(self.MILESTONE_TYPES.keys())
-                }
+                return {'success': False, 'error': f'Invalid milestone type: {milestone_type}'}
 
-            # Get current user data
-            user_data = self.get_user_profile(user_id)
-            if not user_data:
-                return {
-                    'success': False,
-                    'error': 'User not found'
-                }
+            milestone_config = self.MILESTONE_TYPES[milestone_type]
 
-            # Get or initialize milestones
-            milestones = user_data.get('milestones', {})
+            # For one_time milestones, check if already achieved
+            if milestone_config['one_time']:
+                existing = dynamodb_client.get_item(
+                    'noisemaker-milestones',
+                    {'user_id': user_id, 'milestone_type': milestone_type}
+                )
+                if existing:
+                    logger.info(f"Milestone {milestone_type} already achieved for user {user_id}")
+                    return {'success': True, 'already_achieved': True}
 
-            # Check if milestone already achieved
-            if milestones.get(milestone_type, {}).get('achieved_at'):
-                logger.info(f"Milestone {milestone_type} already achieved for user {user_id}")
-                return {
-                    'success': True,
-                    'already_achieved': True,
-                    'achieved_at': milestones[milestone_type]['achieved_at'],
-                    'video_played': milestones[milestone_type].get('video_played', False)
-                }
+            # For per-song milestones, check this specific song
+            if milestone_config['category'] == 'popularity' and song_id:
+                sk = f"{milestone_type}#{song_id}"
+                existing = dynamodb_client.get_item(
+                    'noisemaker-milestones',
+                    {'user_id': user_id, 'milestone_type': sk}
+                )
+                if existing:
+                    return {'success': True, 'already_achieved': True}
+            else:
+                sk = milestone_type
 
-            # Update milestone as achieved
-            if milestone_type not in milestones:
-                milestones[milestone_type] = {}
+            # Write to milestones table
+            achieved_at = datetime.utcnow().isoformat()
+            milestone_record = {
+                'user_id': user_id,
+                'milestone_type': sk,
+                'category': milestone_config['category'],
+                'media_type': milestone_config['media_type'],
+                'achieved_at': achieved_at,
+                'song_id': song_id
+            }
+            dynamodb_client.put_item('noisemaker-milestones', milestone_record)
 
-            milestones[milestone_type]['achieved_at'] = datetime.utcnow().isoformat()
-            milestones[milestone_type]['video_played'] = False
-            milestones[milestone_type]['video_played_at'] = None
-
-            key = {'user_id': user_id}
-            updates = {'milestones': milestones}
-
-            success = dynamodb_client.update_item(self.table_name, key, updates)
-
-            if success:
-                logger.info(f"Milestone {milestone_type} achieved for user {user_id}")
-
-                # Generate presigned URL for video if available
-                video_url = self._get_milestone_video_url(milestone_type)
-
-                return {
-                    'success': True,
+            # Set as pending on user profile (frontend will see this and play the video/jingle)
+            video_url = self._get_milestone_video_url(milestone_type)
+            self.update_user_profile(user_id, {
+                'pending_milestone': {
                     'milestone_type': milestone_type,
-                    'achieved_at': milestones[milestone_type]['achieved_at'],
+                    'description': milestone_config['description'],
+                    'media_type': milestone_config['media_type'],
                     'video_url': video_url,
-                    'video_required': video_url is not None
+                    'achieved_at': achieved_at,
+                    'song_id': song_id
                 }
-            else:
-                return {
-                    'success': False,
-                    'error': 'Failed to update milestone'
-                }
+            })
 
-        except Exception as e:
-            logger.error(f"Error achieving milestone {milestone_type} for {user_id}: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-    def mark_milestone_video_played(self, user_id: str, milestone_type: str) -> Dict[str, Any]:
-        """
-        Mark a milestone video as played (one-time view complete).
-
-        Args:
-            user_id: User's unique identifier
-            milestone_type: Type of milestone
-
-        Returns:
-            Dict with success status
-        """
-        try:
-            logger.info(f"Marking milestone video played: {milestone_type} for user {user_id}")
-
-            user_data = self.get_user_profile(user_id)
-            if not user_data:
-                return {
-                    'success': False,
-                    'error': 'User not found'
-                }
-
-            milestones = user_data.get('milestones', {})
-
-            if milestone_type not in milestones:
-                return {
-                    'success': False,
-                    'error': f'Milestone {milestone_type} not found for user'
-                }
-
-            milestones[milestone_type]['video_played'] = True
-            milestones[milestone_type]['video_played_at'] = datetime.utcnow().isoformat()
-
-            key = {'user_id': user_id}
-            updates = {'milestones': milestones}
-
-            success = dynamodb_client.update_item(self.table_name, key, updates)
-
-            if success:
-                logger.info(f"Milestone video marked as played: {milestone_type} for user {user_id}")
-                return {
-                    'success': True,
-                    'message': 'Milestone video marked as played'
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': 'Failed to update milestone'
-                }
-
-        except Exception as e:
-            logger.error(f"Error marking milestone video played for {user_id}: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-    def get_pending_milestone(self, user_id: str) -> Dict[str, Any]:
-        """
-        Get the next pending milestone that needs video playback.
-        Returns the first achieved milestone where video hasn't been played yet.
-
-        Args:
-            user_id: User's unique identifier
-
-        Returns:
-            Dict with pending milestone info or None if no pending milestones
-        """
-        try:
-            user_data = self.get_user_profile(user_id)
-            if not user_data:
-                return {
-                    'success': False,
-                    'error': 'User not found'
-                }
-
-            milestones = user_data.get('milestones', {})
-
-            # Check milestones in order of priority
-            milestone_priority = ['first_payment', '100_streams', '1000_streams', '10000_streams', '25000_streams']
-
-            for milestone_type in milestone_priority:
-                milestone_data = milestones.get(milestone_type, {})
-
-                # Check if achieved but video not played
-                if milestone_data.get('achieved_at') and not milestone_data.get('video_played', False):
-                    video_url = self._get_milestone_video_url(milestone_type)
-
-                    return {
-                        'success': True,
-                        'has_pending': True,
-                        'milestone_type': milestone_type,
-                        'achieved_at': milestone_data['achieved_at'],
-                        'video_url': video_url,
-                        'description': self.MILESTONE_TYPES[milestone_type]['description']
-                    }
-
-            # No pending milestones
+            logger.info(f"Milestone {milestone_type} achieved for user {user_id}")
             return {
                 'success': True,
-                'has_pending': False,
-                'milestone_type': None,
-                'video_url': None
+                'milestone_type': milestone_type,
+                'video_url': video_url,
+                'media_type': milestone_config['media_type']
             }
+        except Exception as e:
+            logger.error(f"Error achieving milestone {milestone_type} for {user_id}: {str(e)}")
+            return {'success': False, 'error': str(e)}
 
+    def mark_milestone_video_played(self, user_id: str, milestone_type: str = None) -> Dict[str, Any]:
+        """Clear pending milestone after video/jingle has played."""
+        try:
+            success = self.update_user_profile(user_id, {'pending_milestone': None})
+            if success:
+                return {'success': True, 'message': 'Milestone video marked as played'}
+            return {'success': False, 'error': 'Failed to clear pending milestone'}
+        except Exception as e:
+            logger.error(f"Error clearing pending milestone for {user_id}: {str(e)}")
+            return {'success': False, 'error': str(e)}
+
+    def get_pending_milestone(self, user_id: str) -> Dict[str, Any]:
+        """Get pending milestone for user (if any)."""
+        try:
+            user_data = self.get_user_profile(user_id)
+            if not user_data:
+                return {'success': False, 'error': 'User not found'}
+            pending = user_data.get('pending_milestone')
+            if pending:
+                return {'success': True, 'has_pending': True, **pending}
+            return {'success': True, 'has_pending': False, 'milestone_type': None, 'video_url': None}
         except Exception as e:
             logger.error(f"Error getting pending milestone for {user_id}: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            return {'success': False, 'error': str(e)}
 
     def _get_milestone_video_url(self, milestone_type: str) -> Optional[str]:
-        """
-        Generate presigned S3 URL for milestone video.
-
-        Args:
-            milestone_type: Type of milestone
-
-        Returns:
-            Presigned URL string or None if no video
-        """
+        """Generate presigned S3 URL for milestone video/jingle."""
         try:
-            milestone_config = self.MILESTONE_TYPES.get(milestone_type)
-            if not milestone_config or not milestone_config.get('video_path'):
+            if milestone_type not in self.MILESTONE_TYPES:
                 return None
-
+            s3_key = f"Milestones/milestone_{milestone_type}/milestone_{milestone_type}.MP4"
             import boto3
             s3_client = boto3.client('s3', region_name='us-east-2')
-
-            video_url = s3_client.generate_presigned_url(
+            return s3_client.generate_presigned_url(
                 'get_object',
-                Params={
-                    'Bucket': self.S3_BUCKET,
-                    'Key': milestone_config['video_path']
-                },
-                ExpiresIn=3600  # URL valid for 1 hour
+                Params={'Bucket': self.S3_BUCKET, 'Key': s3_key},
+                ExpiresIn=3600
             )
-
-            return video_url
-
         except Exception as e:
-            logger.error(f"Error generating presigned URL for {milestone_type}: {str(e)}")
+            logger.error(f"Error generating presigned URL for {milestone_type}: {e}")
             return None
 
     def get_all_active_users(self) -> List[str]:
@@ -1669,26 +1335,6 @@ def remove_user_platform(user_id: str, platform: str) -> Dict[str, Any]:
     return user_manager.remove_platform_from_user(user_id, platform)
 
 
-def initialize_user_baseline(user_id: str) -> Dict[str, Any]:
-    """Initialize baseline collection for a new user."""
-    return user_manager.initialize_baseline_collection(user_id)
-
-
-def start_user_baseline_collection(user_id: str, track_ids: List[str]) -> Dict[str, Any]:
-    """Start baseline data collection with 5 Spotify track IDs."""
-    return user_manager.start_baseline_collection(user_id, track_ids)
-
-
-def complete_user_baseline(user_id: str, baseline_value: float) -> Dict[str, Any]:
-    """Complete baseline calculation and enable Fire Mode."""
-    return user_manager.complete_baseline_calculation(user_id, baseline_value)
-
-
-def get_baseline_info(user_id: str) -> Dict[str, Any]:
-    """Get all baseline tracking information for a user."""
-    return user_manager.get_user_baseline_info(user_id)
-
-
 # Onboarding convenience functions
 def init_user_onboarding(user_id: str, initial_status: str = 'tier_pending') -> Dict[str, Any]:
     """Initialize onboarding for a new user."""
@@ -1711,12 +1357,12 @@ def init_user_milestones(user_id: str) -> Dict[str, Any]:
     return user_manager.initialize_milestones(user_id)
 
 
-def achieve_user_milestone(user_id: str, milestone_type: str) -> Dict[str, Any]:
+def achieve_user_milestone(user_id: str, milestone_type: str, song_id: str = None) -> Dict[str, Any]:
     """Mark a milestone as achieved for a user."""
-    return user_manager.achieve_milestone(user_id, milestone_type)
+    return user_manager.achieve_milestone(user_id, milestone_type, song_id)
 
 
-def mark_milestone_viewed(user_id: str, milestone_type: str) -> Dict[str, Any]:
+def mark_milestone_viewed(user_id: str, milestone_type: str = None) -> Dict[str, Any]:
     """Mark a milestone video as played."""
     return user_manager.mark_milestone_video_played(user_id, milestone_type)
 
@@ -1750,12 +1396,3 @@ def award_art_tokens_for_song(user_id: str) -> Dict[str, Any]:
 def deduct_user_art_token(user_id: str) -> Dict[str, Any]:
     """Deduct one art token for a free download."""
     return user_manager.deduct_art_token(user_id)
-
-
-# RUBRIC SELF-ASSESSMENT:
-# ✅ Environment variables for secrets: YES - Uses secure DynamoDB operations
-# ✅ Follow all instructions exactly: YES - Complete user management + 8-platform selection system
-# ✅ Secure: YES - Input validation, platform validation, subscription limit enforcement
-# ✅ Scalable: YES - Efficient queries, modular platform config, subscription tier management
-# ✅ Spam-proof: YES - Usage limits, platform limits, comprehensive validation
-# PLATFORM SELECTION SYSTEM COMPLETE - SCORE: 10/10 ✅
