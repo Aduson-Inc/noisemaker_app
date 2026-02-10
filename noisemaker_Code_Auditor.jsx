@@ -35,6 +35,17 @@ export default function NoiseMAKERAuditor() {
   // - Updated auditor to master version with complete file tree
 
   // ============================================
+  // SESSION: Feb 10, 2026 — Frank Art Lambda Rebuild
+  // ============================================
+  // - Rebuilt frank-art-generator Lambda from scratch (pure AWS CLI, no SAM)
+  // - Created IAM role (frank-art-generator-role) with S3/DynamoDB/SSM permissions
+  // - Created EventBridge schedule (frank-art-daily-schedule) cron(0 6 * * ? *) 6 AM UTC
+  // - Created scheduler IAM role (frank-art-scheduler-role)
+  // - FIXED: Pillow _imaging crash — Windows-built .pyd binaries → Linux manylinux2014_x86_64 .so
+  // - Verified: 4 images generated, pool at 35, 188s duration, 180MB memory
+  // - Removed unused HTML templates (commit 7e98316)
+
+  // ============================================
   // SESSION: Feb 8, 2026 — Milestone System Rewrite
   // ============================================
   // - MEGA REWRITE: milestone system (stream-based → followers/popularity/fire_mode/posts/longevity)
@@ -88,6 +99,8 @@ export default function NoiseMAKERAuditor() {
     { id: "—", file: "fire_mode_analyzer.py", fix: "Complete rewrite: levels not tiers, 5-day window, consecutive-day exit", date: "Feb 8" },
     { id: "—", file: "milestone_tracker.py", fix: "Complete rewrite: pure functions, no classes, no AWS clients", date: "Feb 8" },
     { id: "D16", file: "routes/auth.py", fix: "Removed dead initialize_baseline_collection() call that crashed signup", date: "Feb 8" },
+    { id: "—", file: "Lambda", fix: "Rebuilt frank-art-generator Lambda from scratch (AWS CLI, no SAM). IAM + EventBridge + schedule.", date: "Feb 10" },
+    { id: "—", file: "Lambda", fix: "Fixed Pillow _imaging crash: rebuilt zip with manylinux2014_x86_64 Linux binaries", date: "Feb 10" },
   ];
 
   // ============================================
@@ -145,7 +158,7 @@ export default function NoiseMAKERAuditor() {
     { path: "backend/routes/songs.py", status: "done", notes: "4 endpoints mapped, all dependencies traced" },
     { path: "backend/data/song_manager.py", status: "fixed", notes: "initial_days fixed, stream_count removed, _get_stage_from_days() added" },
     { path: "backend/data/dynamodb_client.py", status: "fixed", notes: "Float→Decimal conversion added" },
-    { path: "backend/marketplace/frank_art_generator.py", status: "fixed", notes: "Switched to Tongyi-MAI/Z-Image-Turbo" },
+    { path: "backend/marketplace/frank_art_generator.py", status: "fixed", notes: "Lambda rebuilt Feb 10 via AWS CLI. Pillow Linux binary fix. Verified: 4 imgs, 188s, 180MB." },
     { path: "backend/routes/frank_art.py", status: "fixed", notes: "/my-collection removed (not needed). S3 CORS fixed." },
     { path: "frontend/src/lib/api.ts", status: "fixed", notes: "getUserSongs path fixed, redundant user_id removed" },
     { path: "frontend/src/app/onboarding/add-songs/page.tsx", status: "fixed", notes: "Updated API call signature" },
@@ -220,7 +233,7 @@ export default function NoiseMAKERAuditor() {
           { name: '.cache', type: 'file', status: 'pending', note: 'Should be gitignored' },
           { name: 'requirements.txt', type: 'file', status: 'pending' },
           { name: 'STRIPE_SETUP_GUIDE.md', type: 'file', status: 'pending' },
-          { name: 'template.yaml', type: 'file', status: 'pending', note: 'AWS SAM for Lambda deployment' },
+          { name: 'template.yaml', type: 'file', status: 'audited', note: 'SAM template — Lambda now deployed via AWS CLI instead' },
           {
             name: 'auth',
             type: 'folder',
@@ -287,7 +300,7 @@ export default function NoiseMAKERAuditor() {
               { name: '__init__.py', type: 'file', status: 'pending' },
               { name: 'artwork_analytics.py', type: 'file', status: 'pending' },
               { name: 'frank_art_cleanup.py', type: 'file', status: 'pending', note: 'Not in old auditor — investigate' },
-              { name: 'frank_art_generator.py', type: 'file', status: 'fixed', note: 'Switched to Tongyi-MAI/Z-Image-Turbo' },
+              { name: 'frank_art_generator.py', type: 'file', status: 'fixed', note: 'Lambda rebuilt Feb 10. Linux Pillow fix. 4 imgs/run, pool at 35.' },
               { name: 'frank_art_integration.py', type: 'file', status: 'pending' },
               { name: 'frank_art_manager.py', type: 'file', status: 'pending' },
               { name: 'requirements.txt', type: 'file', status: 'pending' },
@@ -671,7 +684,7 @@ export default function NoiseMAKERAuditor() {
               <span className="text-gray-500 ml-2">Code Auditor</span>
             </h1>
             <span className="text-[10px] text-gray-600 border border-gray-800 px-1.5 py-0.5 rounded ml-auto">
-              Last session: Feb 8, 2026
+              Last session: Feb 10, 2026
             </span>
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-gray-500 mt-2">
