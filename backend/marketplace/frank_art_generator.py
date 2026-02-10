@@ -2,7 +2,7 @@
 Frank Art Generator for Marketplace
 ====================================
 
-Generates 4 high-quality Frank Art pieces daily using free HuggingFace Space.
+Generates 4 high-quality Frank Art pieces daily using HuggingFace Inference API.
 Runs as AWS Lambda triggered by EventBridge at 9 PM UTC daily.
 
 Three rotating lists advance by 1 each day:
@@ -59,7 +59,7 @@ MAX_POOL_SIZE = 250
 
 # Art styles (7 total) - advances by 1 each day
 ART_STYLES = [
-    "Impressionism",
+    "Abstract geometric",
     "Cubism",
     "Surrealism",
     "Art Deco",
@@ -72,13 +72,13 @@ ART_STYLES = [
 ARTIST_STYLES = [
     "Jean-Michel Basquiat",
     "Georges Braque",
-    "Georgia Theologoe",
+    "Mark Rothko",
     "Ernst Ludwig Kirchner",
     "Malgorzata Kmiec",
     "Pascal Blanche",
     "Kazimir Malevich",
     "Yayoi Kusama",
-    "Nives Palmic",
+    "Willem de Kooning",
     "Finn Campbell-Norman",
     "Elena Kotliarker"
 ]
@@ -164,6 +164,13 @@ COLORS = [
 
 # S3 client - uses IAM role credentials in Lambda
 s3_client = boto3.client('s3', region_name=AWS_REGION)
+
+# Get HuggingFace token from SSM (one-time on Lambda cold start)
+ssm_client = boto3.client('ssm', region_name=AWS_REGION)
+HF_TOKEN = ssm_client.get_parameter(
+    Name='/noisemaker/huggingface_token',
+    WithDecryption=True
+)['Parameter']['Value']
 
 
 # =============================================================================
@@ -263,39 +270,27 @@ def advance_state(state: Dict) -> Dict:
 
 def generate_image(prompt: str, retry_count: int = 2) -> Optional[Image.Image]:
     """
-    Generate image using free HuggingFace Space via Gradio Client.
-    Uses mrfakename/Z-Image-Turbo (SDXL-based, completely free).
+    Generate image using HuggingFace Inference API.
+    Uses FLUX.1-schnell via InferenceClient (no gradio_client needed).
     """
     try:
-        from gradio_client import Client
+        from huggingface_hub import InferenceClient
 
         logger.info(f"Generating image: {prompt[:60]}...")
 
-        client = Client("mrfakename/Z-Image-Turbo")
-        
-        result = client.predict(
+        client = InferenceClient(api_key=HF_TOKEN)
+        image = client.text_to_image(
             prompt=prompt,
-            seed=42,
-            random_seed=True,
-            resolution="1024x1024 ( 1:1 )",
-            steps=8,
-            shift=3,
-            api_name="/generate"
+            model="black-forest-labs/FLUX.1-schnell",
         )
-        
-        # Result is a tuple: (image_path, seed_str, seed_int)
-        image_path = result[0]
-        
-        # Load the image
-        image = Image.open(image_path)
-        
+
         logger.info(f"Image generated: {image.size}")
         return image
 
     except Exception as e:
         error_msg = str(e).lower()
 
-        if retry_count > 0 and ("queue" in error_msg or "timeout" in error_msg or "503" in error_msg):
+        if retry_count > 0 and ("queue" in error_msg or "timeout" in error_msg or "503" in error_msg or "429" in error_msg):
             logger.warning(f"Retrying in 30s... ({retry_count} retries left)")
             time.sleep(30)
             return generate_image(prompt, retry_count - 1)
