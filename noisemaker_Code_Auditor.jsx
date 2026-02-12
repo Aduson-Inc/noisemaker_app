@@ -24,6 +24,17 @@ export default function NoiseMAKERAuditor() {
   };
 
   // ============================================
+  // SESSION: Feb 12, 2026 — Caption System Fix + Day-0 Activation
+  // ============================================
+  // - Wired caption_generator.py as single source of truth for captions (Grok AI primary, template fallback)
+  // - Added 5 missing platforms to platform_limits: youtube, tiktok, reddit, discord, threads
+  // - Removed duplicate CAPTION_TEMPLATES + generate_caption() from content_generator.py (now imports from caption_generator)
+  // - Added day-0 activation check in daily_orchestrator.py: release_date - 14 days gate
+  // - Day-0 songs excluded from post scheduling (only days >= 1 get posts)
+  // - Inserted 5 mock platform connections for test user (instagram, twitter, facebook, reddit, discord)
+  // - Updated test user onboarding_status to songs_pending
+
+  // ============================================
   // SESSION: Feb 12, 2026 — Content Pipeline Build
   // ============================================
   // - Created 3 DynamoDB tables via AWS CLI: noisemaker-content, noisemaker-scheduled-posts (with GSI), noisemaker-posting-history
@@ -124,6 +135,9 @@ export default function NoiseMAKERAuditor() {
     { id: "—", file: "daily_orchestrator.py", fix: "Created: Lambda entry point, timezone-aware 9PM trigger, extended promo handling", date: "Feb 12" },
     { id: "—", file: "post_dispatcher.py", fix: "Created: hourly dispatcher, GSI query, retry logic (max 2), content exhaustion tracking", date: "Feb 12" },
     { id: "D7", file: "Color analysis", fix: "Implemented in content_generator.py: extract_and_cache_colors() via PIL quantization. Stored on song record.", date: "Feb 12" },
+    { id: "—", file: "caption_generator.py", fix: "Wired as single caption source: added 5 platform limits, CAPTION_TEMPLATES, generate_caption() (Grok AI + template fallback)", date: "Feb 12" },
+    { id: "—", file: "content_generator.py", fix: "Removed duplicate CAPTION_TEMPLATES + generate_caption(). Now imports from caption_generator.py", date: "Feb 12" },
+    { id: "—", file: "daily_orchestrator.py", fix: "Day-0 activation check: release_date - 14 days gate, pending songs excluded from scheduling", date: "Feb 12" },
   ];
 
   // ============================================
@@ -166,7 +180,7 @@ export default function NoiseMAKERAuditor() {
     { id: 11, category: "Daily Processor", question: "Is this Lambda, cron job, or backend service?", status: "answered", answer: "New system: daily_orchestrator.py (Lambda via EventBridge every 30 min). Old daily_processor.py/cron_manager.py superseded." },
     { id: 12, category: "Frontend", question: "Is the loading state already built?", status: "open", answer: null },
     { id: 13, category: "Frontend", question: "Progress updates: WebSocket, polling, or single?", status: "open", answer: null },
-    { id: 14, category: "Business Logic", question: "If user uploads only 1 song, does it start at Day 0?", status: "open", answer: null },
+    { id: 14, category: "Business Logic", question: "If user uploads only 1 song, does it start at Day 0?", status: "answered", answer: "Yes. All songs start at day 0. Activation to day 1 requires today >= (release_date - 14 days), or immediate if no release_date. Day-0 songs are excluded from post scheduling." },
     { id: 15, category: "Business Logic", question: "Can users add songs 2 & 3 later?", status: "open", answer: null },
     { id: 16, category: "Architecture", question: "Which tables can merge into user profile?", status: "answered", answer: "platform-connections should NOT merge (composite key needed). milestones already IN user record. noisemaker-baselines could potentially merge." },
     { id: 17, category: "Frontend", question: "Which landing page variant is active? (aurora/monolith/noir-luxe/genz)", status: "open", answer: null },
@@ -204,11 +218,12 @@ export default function NoiseMAKERAuditor() {
     { path: "backend/routes/dashboard.py", status: "audited", notes: "Partial read. mark_milestone_video_played compat verified." },
     { path: "backend/scheduler/schedule_grids.py", status: "done", notes: "NEW: Pure data — 14-day grids for 3-song mode, 2-8 platform counts" },
     { path: "backend/scheduler/schedule_engine.py", status: "done", notes: "NEW: get_tomorrows_posts(), 1/2/3 song modes, increment_schedule_day(), get_position()" },
-    { path: "backend/content/content_generator.py", status: "done", notes: "NEW: generate_content(), generate_caption(), extract_and_cache_colors(), check_content_available()" },
-    { path: "backend/scheduler/daily_orchestrator.py", status: "done", notes: "NEW: Lambda entry, timezone-aware 9PM, extended promo 3-day rotation" },
+    { path: "backend/content/content_generator.py", status: "done", notes: "NEW: generate_content(), extract_and_cache_colors(), check_content_available(). Captions moved to caption_generator.py" },
+    { path: "backend/scheduler/daily_orchestrator.py", status: "done", notes: "NEW: Lambda entry, timezone-aware 9PM, extended promo, day-0 activation (release_date - 14d gate)" },
     { path: "backend/scheduler/post_dispatcher.py", status: "done", notes: "NEW: Hourly Lambda, GSI query, retry (max 2), content exhaustion tracking" },
     { path: "backend/content/multi_platform_poster.py", status: "audited", notes: "1440 lines. 8 platform poster classes. PostContent/PostResult dataclasses. Per-user OAuth." },
     { path: "backend/scheduler/posting_schedule.py", status: "audited", notes: "OPTIMAL_POSTING_TIMES dict + select_random_posting_time(). Returns HH:MM string." },
+    { path: "backend/content/caption_generator.py", status: "fixed", notes: "Grok AI CaptionGenerator class + generate_caption() simple interface. 8 platform templates. Template fallback." },
   ];
 
   // ============================================
@@ -224,7 +239,6 @@ export default function NoiseMAKERAuditor() {
     { priority: 7, file: "backend/auth/environment_loader.py", reason: "get_platform_credentials — used by baseline_calculator + popularity_tracker", status: "queued" },
     { priority: 8, file: "backend/config/platform_config.py", reason: "Unknown file — not in old auditor, needs investigation", status: "queued" },
     { priority: 9, file: "backend/content/image_processor.py", reason: "OLD color analysis — superseded by content_generator.py extract_and_cache_colors()", status: "queued" },
-    { priority: 10, file: "backend/content/caption_generator.py", reason: "OLD captions — superseded by content_generator.py generate_caption()", status: "queued" },
   ];
 
   // ============================================
@@ -237,7 +251,7 @@ export default function NoiseMAKERAuditor() {
     { name: "noisemaker-frank-art-purchases", items: 0, size: "0 B", status: "active", issue: null },
     { name: "noisemaker-email-reservations", items: 1, size: "~100 B", status: "active", issue: null },
     { name: "noisemaker-oauth-states", items: 0, size: "0 B", status: "active", issue: "Needs TTL auto-delete" },
-    { name: "noisemaker-platform-connections", items: 0, size: "0 B", status: "active", issue: "Recreated Feb 8. PK: user_id, SK: platform" },
+    { name: "noisemaker-platform-connections", items: 5, size: "~1 KB", status: "active", issue: "Recreated Feb 8. PK: user_id, SK: platform. 5 mock connections for testing." },
     { name: "noisemaker-milestones", items: 0, size: "0 B", status: "active", issue: "PK: user_id, SK: milestone_type. Per-song milestones use composite SK." },
     { name: "noisemaker-baselines", items: 0, size: "0 B", status: "active", issue: "Recreated Feb 8. PK: user_id, SK: calculation_date" },
     { name: "noisemaker-content", items: 0, size: "0 B", status: "active", issue: "Created Feb 12. PK: user_id, SK: content_id. Stores generated promo images + captions." },
@@ -301,8 +315,8 @@ export default function NoiseMAKERAuditor() {
             type: 'folder',
             children: [
               { name: '__init__.py', type: 'file', status: 'pending' },
-              { name: 'caption_generator.py', type: 'file', status: 'pending', note: 'OLD — superseded by content_generator.py generate_caption()' },
-              { name: 'content_generator.py', type: 'file', status: 'done', note: 'NEW Feb 12: HF image gen, compositing, captions, color extraction, content reuse' },
+              { name: 'caption_generator.py', type: 'file', status: 'fixed', note: 'Single caption source: Grok AI + template fallback. 8 platforms. generate_caption() interface.' },
+              { name: 'content_generator.py', type: 'file', status: 'done', note: 'NEW Feb 12: HF image gen, compositing, color extraction, content reuse. Captions via caption_generator.py' },
               { name: 'content_integration.py', type: 'file', status: 'pending', note: 'OLD — delete candidate (D21)' },
               { name: 'content_orchestrator.py', type: 'file', status: 'pending', note: 'OLD — delete candidate (D21)' },
               { name: 'image_processor.py', type: 'file', status: 'pending', note: 'OLD — superseded by content_generator.py extract_and_cache_colors()' },
@@ -386,7 +400,7 @@ export default function NoiseMAKERAuditor() {
             children: [
               { name: '__init__.py', type: 'file', status: 'pending' },
               { name: 'cron_manager.py', type: 'file', status: 'pending', note: 'OLD — likely superseded by daily_orchestrator.py' },
-              { name: 'daily_orchestrator.py', type: 'file', status: 'done', note: 'NEW Feb 12: Lambda entry, timezone-aware 9PM, extended promo' },
+              { name: 'daily_orchestrator.py', type: 'file', status: 'done', note: 'NEW Feb 12: Lambda entry, timezone-aware 9PM, extended promo, day-0 activation gate' },
               { name: 'daily_processor.py', type: 'file', status: 'pending', note: 'OLD — superseded by daily_orchestrator.py. Delete candidate.' },
               { name: 'monthly_baseline_recalculator.py', type: 'file', status: 'pending' },
               { name: 'post_dispatcher.py', type: 'file', status: 'done', note: 'NEW Feb 12: Hourly Lambda, GSI query, retry logic, exhaustion' },
