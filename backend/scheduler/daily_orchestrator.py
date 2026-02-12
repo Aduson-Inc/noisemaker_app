@@ -222,14 +222,17 @@ def _process_user(user: dict) -> dict:
         logger.info(f"User {user_id}: no connected platforms, skipping")
         return {"user_id": user_id, "status": "skipped", "reason": "no_platforms"}
 
-    # Build user_data for schedule engine
+    # Build user_data for schedule engine — only songs with days >= 1 get posts
+    schedulable_songs = [
+        s for s in active_songs if int(s.get("days_in_promotion", 0)) >= 1
+    ]
     user_data = {
         "active_songs": [
             {
                 "song_id": s["song_id"],
                 "days_in_promotion": int(s.get("days_in_promotion", 1)),
             }
-            for s in active_songs
+            for s in schedulable_songs
         ],
         "connected_platforms": connected_platforms,
         "schedule_day": schedule_day,
@@ -307,25 +310,52 @@ def _process_user(user: dict) -> dict:
         ExpressionAttributeValues={":d": new_day},
     )
 
-    # Increment days_in_promotion for each active song; retire at 43
+    # Advance days_in_promotion with day-0 activation check
+    local_today = datetime.now(timezone.utc).astimezone(user_tz).date()
+
     for song in active_songs:
         sid = song["song_id"]
-        current_days = int(song.get("days_in_promotion", 1))
-        new_days = current_days + 1
+        current_days = int(song.get("days_in_promotion", 0))
 
-        if new_days > MAX_PROMO_DAYS:
+        if current_days == 0:
+            # Day-0 activation check
+            release_date_str = (song.get("release_date") or "").strip()
+            if release_date_str:
+                try:
+                    release_dt = datetime.strptime(release_date_str, "%Y-%m-%d").date()
+                    promo_start = release_dt - timedelta(days=14)
+                    if local_today < promo_start:
+                        logger.info(f"Song {sid} pending — promo starts {promo_start}")
+                        continue
+                except ValueError:
+                    logger.warning(f"Song {sid} has invalid release_date '{release_date_str}', activating now")
+
+            # Activate: either no release_date, date reached, or invalid date
+            new_days = 1
+            songs_table.update_item(
+                Key={"user_id": user_id, "song_id": sid},
+                UpdateExpression="SET days_in_promotion = :d, promotion_status = :s",
+                ExpressionAttributeValues={":d": new_days, ":s": "active"},
+            )
+            logger.info(f"Song {sid} activated at day 1")
+
+        elif current_days < MAX_PROMO_DAYS:
+            new_days = current_days + 1
+            songs_table.update_item(
+                Key={"user_id": user_id, "song_id": sid},
+                UpdateExpression="SET days_in_promotion = :d",
+                ExpressionAttributeValues={":d": new_days},
+            )
+
+        else:
+            # current_days >= 42, retire
+            new_days = current_days + 1
             songs_table.update_item(
                 Key={"user_id": user_id, "song_id": sid},
                 UpdateExpression="SET days_in_promotion = :d, promotion_status = :s",
                 ExpressionAttributeValues={":d": new_days, ":s": "retired"},
             )
             logger.info(f"Song {sid} retired at day {new_days}")
-        else:
-            songs_table.update_item(
-                Key={"user_id": user_id, "song_id": sid},
-                UpdateExpression="SET days_in_promotion = :d",
-                ExpressionAttributeValues={":d": new_days},
-            )
 
     return {
         "user_id": user_id,
