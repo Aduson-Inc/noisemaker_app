@@ -17,11 +17,27 @@ export default function NoiseMAKERAuditor() {
   const techStack = {
     frontend: "Next.js 15",
     backend: "FastAPI Python 3.12",
-    database: "DynamoDB (9 tables, us-east-2)",
+    database: "DynamoDB (12 tables, us-east-2)",
     auth: "JWT",
     storage: "S3 — noisemakerpromobydoowopp",
     payments: "Stripe (Talent $25 / Star $40 / Legend $60)"
   };
+
+  // ============================================
+  // SESSION: Feb 12, 2026 — Content Pipeline Build
+  // ============================================
+  // - Created 3 DynamoDB tables via AWS CLI: noisemaker-content, noisemaker-scheduled-posts (with GSI), noisemaker-posting-history
+  // - Total tables now: 12 (was 9)
+  // - Created backend/scheduler/schedule_grids.py — pure data: 14-day posting grids for 3-song mode (2-8 platforms)
+  // - Created backend/scheduler/schedule_engine.py — grid lookup + song/platform mapping (1/2/3 song modes)
+  // - Created backend/content/content_generator.py — HF image gen, Spotify artwork compositing, captions, color extraction, content reuse
+  // - Created backend/scheduler/daily_orchestrator.py — Lambda entry point, timezone-aware (9 PM local), extended promo handling
+  // - Created backend/scheduler/post_dispatcher.py — hourly dispatcher via GSI query, retry logic, exhaustion tracking
+  // - Read and analyzed: multi_platform_poster.py (1440 lines), posting_schedule.py, platform_oauth_manager.py
+  // - Design decisions locked: timezone-aware ops, FIFO content reuse, JPEG output, 24h UTC dispatcher coverage
+  // - FOLLOW-UP: content_generator.py needs song_count on content record for exhaustion threshold
+  // - FOLLOW-UP: old files to delete after testing (content_orchestrator.py, content_integration.py, cron_manager.py, template_manager.py)
+  // - FOLLOW-UP: 11 tmpclaude- agent temp folders in backend/content/ need cleanup
 
   // ============================================
   // SESSION: Feb 7, 2026
@@ -101,6 +117,13 @@ export default function NoiseMAKERAuditor() {
     { id: "D16", file: "routes/auth.py", fix: "Removed dead initialize_baseline_collection() call that crashed signup", date: "Feb 8" },
     { id: "—", file: "Lambda", fix: "Rebuilt frank-art-generator Lambda from scratch (AWS CLI, no SAM). IAM + EventBridge + schedule.", date: "Feb 10" },
     { id: "—", file: "Lambda", fix: "Fixed Pillow _imaging crash: rebuilt zip with manylinux2014_x86_64 Linux binaries", date: "Feb 10" },
+    { id: "—", file: "DynamoDB", fix: "Created 3 tables: noisemaker-content, noisemaker-scheduled-posts (with GSI), noisemaker-posting-history", date: "Feb 12" },
+    { id: "—", file: "schedule_grids.py", fix: "Created: pure data 14-day posting grids for 3-song mode (2-8 platforms)", date: "Feb 12" },
+    { id: "—", file: "schedule_engine.py", fix: "Created: grid lookup + song/platform mapping for 1/2/3 song modes", date: "Feb 12" },
+    { id: "—", file: "content_generator.py", fix: "Created: HF image gen, artwork compositing, captions, color extraction, content reuse checks", date: "Feb 12" },
+    { id: "—", file: "daily_orchestrator.py", fix: "Created: Lambda entry point, timezone-aware 9PM trigger, extended promo handling", date: "Feb 12" },
+    { id: "—", file: "post_dispatcher.py", fix: "Created: hourly dispatcher, GSI query, retry logic (max 2), content exhaustion tracking", date: "Feb 12" },
+    { id: "D7", file: "Color analysis", fix: "Implemented in content_generator.py: extract_and_cache_colors() via PIL quantization. Stored on song record.", date: "Feb 12" },
   ];
 
   // ============================================
@@ -113,7 +136,9 @@ export default function NoiseMAKERAuditor() {
     { id: "O5", priority: "medium", title: "Field naming inconsistency", location: "songs.py vs song_manager.py", description: "promotion_stage vs stage_of_promotion — pick one." },
     { id: "D5", priority: "medium", title: "streams_per_day is WRONG concept", location: "noisemaker-users table", description: "Spotify has popularity (0-100), not streams_per_day." },
     { id: "D6", priority: "medium", title: "Typo: artiist_name (double i)", location: "noisemaker-users table", description: "Should be artist_name." },
-    { id: "D7", priority: "medium", title: "Color analysis not implemented", location: "content/image_processor.py", description: "File exists, needs audit. Should match song art colors → background templates." },
+    { id: "D20", priority: "medium", title: "content_generator.py missing song_count on content record", location: "backend/content/content_generator.py", description: "post_dispatcher needs song_count to determine exhaustion threshold (1 vs 2). Defaults to 1 until fixed." },
+    { id: "D21", priority: "low", title: "Old pipeline files to delete after testing", location: "backend/content/", description: "content_orchestrator.py, content_integration.py, cron_manager.py, template_manager.py — superseded by new pipeline." },
+    { id: "D22", priority: "low", title: "11 tmpclaude- agent temp folders in backend/content/", location: "backend/content/tmpclaude-*", description: "Leftover from previous agent sessions. Safe to delete." },
     { id: "D17", priority: "medium", title: "daily_processor.py uses old MilestoneTracker class", location: "scheduler/daily_processor.py:30,60,596", description: "MilestoneTracker class was removed. daily_processor will crash." },
     { id: "D18", priority: "medium", title: "schemas.py still has fire_mode_available field", location: "backend/models/schemas.py:204", description: "Stale field from old fire mode system." },
     { id: "D19", priority: "low", title: "Fake rubric headers in ~30 backend files", location: "Multiple files", description: "'Senior Python Backend Engineer' / 'SCORE: 10/10' still in unmodified files." },
@@ -129,16 +154,16 @@ export default function NoiseMAKERAuditor() {
   // ============================================
   const openQuestions = [
     { id: 1, category: "Data Storage", question: "Which DynamoDB table stores song data?", status: "answered", answer: "noisemaker-songs (PK: user_id, SK: song_id)" },
-    { id: 2, category: "Data Storage", question: "Where are color analysis results stored?", status: "open", answer: null },
+    { id: 2, category: "Data Storage", question: "Where are color analysis results stored?", status: "answered", answer: "noisemaker-songs table (color_palette field, list of 3 hex strings). Artwork cached to S3 artwork/{song_id}.jpg" },
     { id: 3, category: "Data Storage", question: "Where is baseline popularity stored?", status: "answered", answer: "noisemaker-baselines table (may be redundant with users table)" },
     { id: 4, category: "Data Storage", question: "Is there an onboarding_complete flag?", status: "answered", answer: "Yes — set to true after songs added, before redirect to dashboard" },
-    { id: 5, category: "Color Analysis", question: "Which file runs color analysis?", status: "answered", answer: "content/image_processor.py — exists but needs audit" },
-    { id: 6, category: "Color Analysis", question: "External API or local library?", status: "open", answer: null },
-    { id: 7, category: "Color Analysis", question: "What format is the color output?", status: "open", answer: null },
+    { id: 5, category: "Color Analysis", question: "Which file runs color analysis?", status: "answered", answer: "content/content_generator.py → extract_and_cache_colors(). Old image_processor.py superseded." },
+    { id: 6, category: "Color Analysis", question: "External API or local library?", status: "answered", answer: "Local library — PIL quantization (Image.Quantize.MEDIANCUT, 8 colors, top 3 extracted)" },
+    { id: 7, category: "Color Analysis", question: "What format is the color output?", status: "answered", answer: "List of 3 hex strings: ['#1a2b3c', '#4d5e6f', '#7a8b9c']. Stored on song record as color_palette." },
     { id: 8, category: "Baseline Popularity", question: "Spotify field or calculated?", status: "answered", answer: "Spotify popularity (0-100). baseline_calculator.py averages 5 most recent songs, rounds UP" },
     { id: 9, category: "Baseline Popularity", question: "Which file runs this calculation?", status: "answered", answer: "backend/spotify/baseline_calculator.py" },
     { id: 10, category: "Daily Processor", question: "What file adds +1 to days_in_promotion?", status: "answered", answer: "backend/scheduler/daily_processor.py" },
-    { id: 11, category: "Daily Processor", question: "Is this Lambda, cron job, or backend service?", status: "answered", answer: "Not visible in main.py. cron_manager.py exists but unaudited. Likely needs EventBridge or external trigger." },
+    { id: 11, category: "Daily Processor", question: "Is this Lambda, cron job, or backend service?", status: "answered", answer: "New system: daily_orchestrator.py (Lambda via EventBridge every 30 min). Old daily_processor.py/cron_manager.py superseded." },
     { id: 12, category: "Frontend", question: "Is the loading state already built?", status: "open", answer: null },
     { id: 13, category: "Frontend", question: "Progress updates: WebSocket, polling, or single?", status: "open", answer: null },
     { id: 14, category: "Business Logic", question: "If user uploads only 1 song, does it start at Day 0?", status: "open", answer: null },
@@ -177,22 +202,29 @@ export default function NoiseMAKERAuditor() {
     { path: "backend/routes/payment.py", status: "fixed", notes: "Baseline trigger wired. Webhook synced with confirm_payment." },
     { path: "backend/notifications/milestone_tracker.py", status: "fixed", notes: "Complete rewrite: pure functions for follower/popularity/fire_mode/post/longevity detection" },
     { path: "backend/routes/dashboard.py", status: "audited", notes: "Partial read. mark_milestone_video_played compat verified." },
+    { path: "backend/scheduler/schedule_grids.py", status: "done", notes: "NEW: Pure data — 14-day grids for 3-song mode, 2-8 platform counts" },
+    { path: "backend/scheduler/schedule_engine.py", status: "done", notes: "NEW: get_tomorrows_posts(), 1/2/3 song modes, increment_schedule_day(), get_position()" },
+    { path: "backend/content/content_generator.py", status: "done", notes: "NEW: generate_content(), generate_caption(), extract_and_cache_colors(), check_content_available()" },
+    { path: "backend/scheduler/daily_orchestrator.py", status: "done", notes: "NEW: Lambda entry, timezone-aware 9PM, extended promo 3-day rotation" },
+    { path: "backend/scheduler/post_dispatcher.py", status: "done", notes: "NEW: Hourly Lambda, GSI query, retry (max 2), content exhaustion tracking" },
+    { path: "backend/content/multi_platform_poster.py", status: "audited", notes: "1440 lines. 8 platform poster classes. PostContent/PostResult dataclasses. Per-user OAuth." },
+    { path: "backend/scheduler/posting_schedule.py", status: "audited", notes: "OPTIMAL_POSTING_TIMES dict + select_random_posting_time(). Returns HH:MM string." },
   ];
 
   // ============================================
   // FILE QUEUE (next to analyze)
   // ============================================
   const fileQueue = [
-    { priority: 1, file: "backend/scheduler/daily_processor.py", reason: "Core product — 9 PM daily job. Only major unaudited backend file.", status: "next" },
-    { priority: 2, file: "backend/scheduler/cron_manager.py", reason: "How daily_processor is triggered — EventBridge? Cron?", status: "queued" },
-    { priority: 3, file: "backend/content/image_processor.py", reason: "Color analysis implementation status (D7)", status: "queued" },
-    { priority: 4, file: "backend/content/content_orchestrator.py", reason: "Full content creation pipeline", status: "queued" },
-    { priority: 5, file: "backend/content/caption_generator.py", reason: "AI caption generation — platform character limits", status: "queued" },
-    { priority: 6, file: "backend/content/multi_platform_poster.py", reason: "Actual posting logic — depends on platform_oauth_manager", status: "queued" },
+    { priority: 1, file: "backend/content/content_generator.py", reason: "FOLLOW-UP: Add song_count to content record (D20)", status: "next" },
+    { priority: 2, file: "backend/scheduler/daily_processor.py", reason: "OLD system — verify what can be deleted after new pipeline is tested", status: "queued" },
+    { priority: 3, file: "backend/scheduler/cron_manager.py", reason: "OLD system — likely superseded by daily_orchestrator.py Lambda", status: "queued" },
+    { priority: 4, file: "backend/content/content_orchestrator.py", reason: "OLD pipeline — candidate for deletion (D21)", status: "queued" },
+    { priority: 5, file: "backend/content/content_integration.py", reason: "OLD pipeline — candidate for deletion (D21)", status: "queued" },
+    { priority: 6, file: "backend/content/template_manager.py", reason: "OLD pipeline — candidate for deletion (D21)", status: "queued" },
     { priority: 7, file: "backend/auth/environment_loader.py", reason: "get_platform_credentials — used by baseline_calculator + popularity_tracker", status: "queued" },
-    { priority: 8, file: "backend/scripts/create_dynamodb_tables.py", reason: "Check if platform-connections table is in the creation script", status: "queued" },
-    { priority: 9, file: "backend/config/platform_config.py", reason: "Unknown file — not in old auditor, needs investigation", status: "queued" },
-    { priority: 10, file: "backend/content/content_integration.py", reason: "Unknown file — not in old auditor, needs investigation", status: "queued" },
+    { priority: 8, file: "backend/config/platform_config.py", reason: "Unknown file — not in old auditor, needs investigation", status: "queued" },
+    { priority: 9, file: "backend/content/image_processor.py", reason: "OLD color analysis — superseded by content_generator.py extract_and_cache_colors()", status: "queued" },
+    { priority: 10, file: "backend/content/caption_generator.py", reason: "OLD captions — superseded by content_generator.py generate_caption()", status: "queued" },
   ];
 
   // ============================================
@@ -208,6 +240,9 @@ export default function NoiseMAKERAuditor() {
     { name: "noisemaker-platform-connections", items: 0, size: "0 B", status: "active", issue: "Recreated Feb 8. PK: user_id, SK: platform" },
     { name: "noisemaker-milestones", items: 0, size: "0 B", status: "active", issue: "PK: user_id, SK: milestone_type. Per-song milestones use composite SK." },
     { name: "noisemaker-baselines", items: 0, size: "0 B", status: "active", issue: "Recreated Feb 8. PK: user_id, SK: calculation_date" },
+    { name: "noisemaker-content", items: 0, size: "0 B", status: "active", issue: "Created Feb 12. PK: user_id, SK: content_id. Stores generated promo images + captions." },
+    { name: "noisemaker-scheduled-posts", items: 0, size: "0 B", status: "active", issue: "Created Feb 12. PK: user_id, SK: post_id. GSI: status-scheduled_time-index (status HASH, scheduled_time RANGE)." },
+    { name: "noisemaker-posting-history", items: 0, size: "0 B", status: "active", issue: "Created Feb 12. PK: user_id, SK: post_id. Immutable log of all posting attempts." },
   ];
 
   // ============================================
@@ -266,12 +301,13 @@ export default function NoiseMAKERAuditor() {
             type: 'folder',
             children: [
               { name: '__init__.py', type: 'file', status: 'pending' },
-              { name: 'caption_generator.py', type: 'file', status: 'pending' },
-              { name: 'content_integration.py', type: 'file', status: 'pending', note: 'Not in old auditor — investigate' },
-              { name: 'content_orchestrator.py', type: 'file', status: 'pending' },
-              { name: 'image_processor.py', type: 'file', status: 'pending', note: 'Color analysis — D7' },
-              { name: 'multi_platform_poster.py', type: 'file', status: 'pending' },
-              { name: 'template_manager.py', type: 'file', status: 'pending' },
+              { name: 'caption_generator.py', type: 'file', status: 'pending', note: 'OLD — superseded by content_generator.py generate_caption()' },
+              { name: 'content_generator.py', type: 'file', status: 'done', note: 'NEW Feb 12: HF image gen, compositing, captions, color extraction, content reuse' },
+              { name: 'content_integration.py', type: 'file', status: 'pending', note: 'OLD — delete candidate (D21)' },
+              { name: 'content_orchestrator.py', type: 'file', status: 'pending', note: 'OLD — delete candidate (D21)' },
+              { name: 'image_processor.py', type: 'file', status: 'pending', note: 'OLD — superseded by content_generator.py extract_and_cache_colors()' },
+              { name: 'multi_platform_poster.py', type: 'file', status: 'audited', note: '1440 lines. 8 platform posters. PostContent/PostResult. Per-user OAuth.' },
+              { name: 'template_manager.py', type: 'file', status: 'pending', note: 'OLD — delete candidate (D21)' },
               { name: '.vscode/', type: 'folder', status: 'pending', note: '⚠ Agent leftover — verify then remove' },
             ]
           },
@@ -349,10 +385,14 @@ export default function NoiseMAKERAuditor() {
             type: 'folder',
             children: [
               { name: '__init__.py', type: 'file', status: 'pending' },
-              { name: 'cron_manager.py', type: 'file', status: 'pending' },
-              { name: 'daily_processor.py', type: 'file', status: 'pending', note: 'NEXT TO AUDIT — core 9PM daily job' },
+              { name: 'cron_manager.py', type: 'file', status: 'pending', note: 'OLD — likely superseded by daily_orchestrator.py' },
+              { name: 'daily_orchestrator.py', type: 'file', status: 'done', note: 'NEW Feb 12: Lambda entry, timezone-aware 9PM, extended promo' },
+              { name: 'daily_processor.py', type: 'file', status: 'pending', note: 'OLD — superseded by daily_orchestrator.py. Delete candidate.' },
               { name: 'monthly_baseline_recalculator.py', type: 'file', status: 'pending' },
-              { name: 'posting_schedule.py', type: 'file', status: 'pending' },
+              { name: 'post_dispatcher.py', type: 'file', status: 'done', note: 'NEW Feb 12: Hourly Lambda, GSI query, retry logic, exhaustion' },
+              { name: 'posting_schedule.py', type: 'file', status: 'audited', note: 'OPTIMAL_POSTING_TIMES + select_random_posting_time()' },
+              { name: 'schedule_engine.py', type: 'file', status: 'done', note: 'NEW Feb 12: Grid lookup, 1/2/3 song modes, day cycling' },
+              { name: 'schedule_grids.py', type: 'file', status: 'done', note: 'NEW Feb 12: Pure data — 14-day grids for 2-8 platforms' },
               { name: '.claude/', type: 'folder', status: 'pending', note: '⚠ Agent leftover — verify then remove' },
             ]
           },
@@ -684,7 +724,7 @@ export default function NoiseMAKERAuditor() {
               <span className="text-gray-500 ml-2">Code Auditor</span>
             </h1>
             <span className="text-[10px] text-gray-600 border border-gray-800 px-1.5 py-0.5 rounded ml-auto">
-              Last session: Feb 10, 2026
+              Last session: Feb 12, 2026
             </span>
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-gray-500 mt-2">
@@ -778,8 +818,8 @@ export default function NoiseMAKERAuditor() {
             <div className="bg-[#111118] rounded-lg p-3 border border-yellow-900/30">
               <p className="text-xs text-yellow-400 flex items-center gap-2">
                 <ArrowRight className="w-3.5 h-3.5" />
-                Next: Audit <span className="text-yellow-300 font-bold">scheduler/daily_processor.py</span>
-                <span className="text-gray-600">— core product, 9 PM daily job</span>
+                Next: Fix <span className="text-yellow-300 font-bold">content_generator.py</span>
+                <span className="text-gray-600">— add song_count to content record (D20)</span>
               </p>
             </div>
           </div>
@@ -918,7 +958,7 @@ export default function NoiseMAKERAuditor() {
         {activeTab === 'tables' && (
           <div className="space-y-4">
             <div className="bg-[#111118] rounded-lg p-4 border border-gray-800">
-              <h3 className="text-xs text-gray-400 uppercase tracking-wider mb-3">Active Tables (9 total, 3 with data)</h3>
+              <h3 className="text-xs text-gray-400 uppercase tracking-wider mb-3">Active Tables (12 total, 3 with data)</h3>
               <div className="space-y-2">
                 {tableStatus.map((table, i) => (
                   <div key={i} className="bg-[#0a0a0f] rounded p-3 border border-gray-800">
@@ -934,7 +974,7 @@ export default function NoiseMAKERAuditor() {
             </div>
             <div className="bg-[#111118] rounded-lg p-3 border border-gray-800">
               <p className="text-xs text-gray-500">
-                9 tables total. Purged from 26 on Feb 8. All confirmed active.
+                12 tables total. Purged from 26 on Feb 8 (down to 9). 3 new tables added Feb 12. All confirmed active.
               </p>
             </div>
           </div>
