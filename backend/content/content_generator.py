@@ -34,6 +34,7 @@ import boto3
 import requests
 from boto3.dynamodb.conditions import Key, Attr
 from PIL import Image, ImageDraw, ImageFont
+from content.caption_generator import generate_caption
 
 logger = logging.getLogger(__name__)
 
@@ -97,52 +98,6 @@ HF_TOKEN = ssm_client.get_parameter(
     Name="/noisemaker/huggingface_token",
     WithDecryption=True,
 )["Parameter"]["Value"]
-
-# =============================================================================
-# CAPTION TEMPLATES
-# =============================================================================
-
-CAPTION_TEMPLATES = {
-    "instagram": (
-        '🎵 "{song_name}" by {artist_name} 🔥\n\n'
-        "New music that hits different. Stream it now and let us know what you think!\n\n"
-        "#{genre_tag} #NewMusic #IndieArtist #MusicPromo #NowPlaying "
-        "#StreamNow #MusicDiscovery #{artist_tag}"
-    ),
-    "twitter": (
-        '🔥 "{song_name}" by {artist_name}\n\n'
-        "This track deserves your ears. Stream now 👇\n\n"
-        "#{genre_tag} #NewMusic"
-    ),
-    "facebook": (
-        '🎶 Check out "{song_name}" by {artist_name}!\n\n'
-        "Fresh music worth sharing. Give it a listen and spread the word.\n\n"
-        "#{genre_tag} #NewMusic #MusicDiscovery"
-    ),
-    "threads": (
-        '🎵 "{song_name}" by {artist_name}\n\n'
-        "New heat just dropped. Go stream it!\n\n"
-        "#{genre_tag} #NewMusic #NowPlaying"
-    ),
-    "reddit": (
-        '[Fresh] {artist_name} - "{song_name}"\n\n'
-        "New release worth checking out. Would love to hear what the community thinks."
-    ),
-    "discord": (
-        '🎵 **{song_name}** by **{artist_name}**\n\n'
-        "New track just dropped — give it a spin and let us know what you think!"
-    ),
-    "tiktok": (
-        '🔥 "{song_name}" by {artist_name}\n\n'
-        "This song is a vibe. Stream it now!\n\n"
-        "#{genre_tag} #NewMusic #MusicTok #IndieMusic #NowPlaying"
-    ),
-    "youtube": (
-        '🎵 {artist_name} - "{song_name}" (Official Audio)\n\n'
-        "Stream this track everywhere. Like & subscribe for more indie music discoveries!\n\n"
-        "#{genre_tag} #NewMusic #IndieArtist #MusicDiscovery #NowPlaying"
-    ),
-}
 
 
 # =============================================================================
@@ -366,33 +321,6 @@ def generate_content(song_data: dict, platform: str, user_id: str) -> dict:
         "caption": caption,
     }
 
-
-def generate_caption(
-    song_name: str, artist_name: str, genre: str, platform: str
-) -> str:
-    """
-    Generate a template-based caption for the given platform.
-
-    Platform character limits (for future Grok AI caption integration):
-        instagram:  2200 chars / 30 hashtags
-        twitter:     280 chars / 2-3 hashtags
-        facebook:  63206 chars / 3-5 hashtags
-        youtube:    5000 chars / 5-10 hashtags
-        tiktok:     2200 chars / 5-8 hashtags
-        reddit:    40000 chars / 0 hashtags
-        discord:    2000 chars / 0 hashtags
-        threads:     500 chars / 3-5 hashtags
-    """
-    genre_tag = genre.replace(" ", "").replace("-", "")
-    artist_tag = artist_name.replace(" ", "").replace("-", "")
-
-    template = CAPTION_TEMPLATES.get(platform, CAPTION_TEMPLATES["instagram"])
-    return template.format(
-        song_name=song_name,
-        artist_name=artist_name,
-        genre_tag=genre_tag,
-        artist_tag=artist_tag,
-    )
 
 
 def extract_and_cache_colors(song_id: str, user_id: str, art_url: str) -> list:

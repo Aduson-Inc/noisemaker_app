@@ -68,8 +68,13 @@ class CaptionGenerator:
             # Platform-specific constraints
             self.platform_limits = {
                 'instagram': {'max_chars': 2200, 'max_hashtags': 30},
-                'twitter': {'max_chars': 280, 'max_hashtags': 5}, 
-                'facebook': {'max_chars': 63206, 'max_hashtags': 10}
+                'twitter': {'max_chars': 280, 'max_hashtags': 5},
+                'facebook': {'max_chars': 63206, 'max_hashtags': 10},
+                'youtube': {'max_chars': 5000, 'max_hashtags': 10},
+                'tiktok': {'max_chars': 2200, 'max_hashtags': 8},
+                'reddit': {'max_chars': 40000, 'max_hashtags': 0},
+                'discord': {'max_chars': 2000, 'max_hashtags': 0},
+                'threads': {'max_chars': 500, 'max_hashtags': 5},
             }
             
             # Genre-specific styling
@@ -520,3 +525,90 @@ def format_post_for_platform(caption: GeneratedCaption, platform: str) -> str:
 # ✅ Scalable: YES - Efficient API calls, caching-ready, platform optimization
 # ✅ Spam-proof: YES - Input validation, rate limiting ready, fallback mechanisms
 # SCORE: 10/10 ✅
+
+
+# =============================================================================
+# SIMPLE INTERFACE FOR CONTENT GENERATOR
+# =============================================================================
+
+CAPTION_TEMPLATES = {
+    "instagram": (
+        '🎵 "{song_name}" by {artist_name} 🔥\n\n'
+        "New music that hits different. Stream it now and let us know what you think!\n\n"
+        "#{genre_tag} #NewMusic #IndieArtist #MusicPromo #NowPlaying "
+        "#StreamNow #MusicDiscovery #{artist_tag}"
+    ),
+    "twitter": (
+        '🔥 "{song_name}" by {artist_name}\n\n'
+        "This track deserves your ears. Stream now 👇\n\n"
+        "#{genre_tag} #NewMusic"
+    ),
+    "facebook": (
+        '🎶 Check out "{song_name}" by {artist_name}!\n\n'
+        "Fresh music worth sharing. Give it a listen and spread the word.\n\n"
+        "#{genre_tag} #NewMusic #MusicDiscovery"
+    ),
+    "threads": (
+        '🎵 "{song_name}" by {artist_name}\n\n'
+        "New heat just dropped. Go stream it!\n\n"
+        "#{genre_tag} #NewMusic #NowPlaying"
+    ),
+    "reddit": (
+        '[Fresh] {artist_name} - "{song_name}"\n\n'
+        "New release worth checking out. Would love to hear what the community thinks."
+    ),
+    "discord": (
+        '🎵 **{song_name}** by **{artist_name}**\n\n'
+        "New track just dropped — give it a spin and let us know what you think!"
+    ),
+    "tiktok": (
+        '🔥 "{song_name}" by {artist_name}\n\n'
+        "This song is a vibe. Stream it now!\n\n"
+        "#{genre_tag} #NewMusic #MusicTok #IndieMusic #NowPlaying"
+    ),
+    "youtube": (
+        '🎵 {artist_name} - "{song_name}" (Official Audio)\n\n'
+        "Stream this track everywhere. Like & subscribe for more indie music discoveries!\n\n"
+        "#{genre_tag} #NewMusic #IndieArtist #MusicDiscovery #NowPlaying"
+    ),
+}
+
+
+def _template_fallback(song_name: str, artist_name: str, genre: str, platform: str) -> str:
+    """Generate caption from templates when Grok AI is unavailable."""
+    genre_tag = genre.replace(" ", "").replace("-", "")
+    artist_tag = artist_name.replace(" ", "").replace("-", "")
+    template = CAPTION_TEMPLATES.get(platform, CAPTION_TEMPLATES["instagram"])
+    return template.format(
+        song_name=song_name,
+        artist_name=artist_name,
+        genre_tag=genre_tag,
+        artist_tag=artist_tag,
+    )
+
+
+def generate_caption(song_name: str, artist_name: str, genre: str, platform: str) -> str:
+    """
+    Simple interface for content_generator.py.
+    Tries Grok AI first, falls back to templates.
+    Returns a ready-to-use caption string with hashtags included.
+    """
+    try:
+        generator = get_caption_generator()
+        request = CaptionRequest(
+            artist_name=artist_name,
+            song_title=song_name,
+            genre=genre,
+            mood="energetic",
+            release_date=datetime.now().strftime('%Y-%m-%d'),
+            spotify_url="",
+            platform=platform,
+        )
+        result = generator.generate_caption(request)
+        if result:
+            return generator.format_final_post(result, include_links=False)
+    except Exception as e:
+        logger.warning(f"Grok AI caption failed, using template fallback: {e}")
+
+    # Template fallback (no API needed)
+    return _template_fallback(song_name, artist_name, genre, platform)
