@@ -45,3 +45,8 @@ tmpclaude-*
 backend/.cache/
 backend/lambda_package/
 output.json
+backend/.cache
+nul
+
+# VS Code workspace
+*.code-workspace
