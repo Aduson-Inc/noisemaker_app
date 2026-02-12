@@ -189,8 +189,8 @@ def _build_song_data(song: dict) -> dict:
     """Build the song_data dict expected by generate_content()."""
     return {
         "song_id": song["song_id"],
-        "song_name": song.get("song_name", ""),
-        "artist_name": song.get("artist_name", ""),
+        "song_name": song.get("song", ""),
+        "artist_name": song.get("artist_title", ""),
         "genre": song.get("genre", "Music"),
         "color_palette": song.get("color_palette", []),
         "cached_artwork_s3_key": song.get("cached_artwork_s3_key", ""),
@@ -325,6 +325,13 @@ def _process_user(user: dict) -> dict:
                     release_dt = datetime.strptime(release_date_str, "%Y-%m-%d").date()
                     promo_start = release_dt - timedelta(days=14)
                     if local_today < promo_start:
+                        # Not ready yet — ensure stage is "pending"
+                        if song.get("stage_of_promotion") != "pending":
+                            songs_table.update_item(
+                                Key={"user_id": user_id, "song_id": sid},
+                                UpdateExpression="SET stage_of_promotion = :s",
+                                ExpressionAttributeValues={":s": "pending"},
+                            )
                         logger.info(f"Song {sid} pending — promo starts {promo_start}")
                         continue
                 except ValueError:
@@ -334,8 +341,8 @@ def _process_user(user: dict) -> dict:
             new_days = 1
             songs_table.update_item(
                 Key={"user_id": user_id, "song_id": sid},
-                UpdateExpression="SET days_in_promotion = :d, promotion_status = :s",
-                ExpressionAttributeValues={":d": new_days, ":s": "active"},
+                UpdateExpression="SET days_in_promotion = :d, promotion_status = :s, stage_of_promotion = :st",
+                ExpressionAttributeValues={":d": new_days, ":s": "active", ":st": "upcoming"},
             )
             logger.info(f"Song {sid} activated at day 1")
 
