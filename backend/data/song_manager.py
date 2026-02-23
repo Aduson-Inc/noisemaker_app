@@ -77,15 +77,10 @@ class SongManager:
             # Generate unique song ID
             song_id = str(uuid.uuid4())
 
-            # Determine days_in_promotion and stage
-            # Priority: 1) song_data['days_in_promotion'] if provided, 2) position param, 3) auto-determine
-            if 'days_in_promotion' in song_data and song_data['days_in_promotion'] is not None:
-                days_in_promotion = int(song_data['days_in_promotion'])
-                stage_of_promotion = self._get_stage_from_days(days_in_promotion)
-            else:
-                days_in_promotion, stage_of_promotion = self._determine_initial_stage_and_days(
-                    user_id, active_songs, position
-                )
+            # Determine initial days_in_promotion and stage based on position
+            days_in_promotion, stage_of_promotion = self._determine_initial_stage_and_days(
+                user_id, active_songs, position
+            )
 
             # Prepare song record
             song_record = {
@@ -106,6 +101,10 @@ class SongManager:
                 'peak_popularity_in_fire_mode': 0,
                 'fire_mode_phase': None,  # 1-3 for Tiers 1-3, None for Tier 4
                 'fire_mode_entered_at': '',
+                # OLD: Stream-based fields (deprecated, kept for backward compatibility)
+                'stream_count': int(song_data.get('stream_count', 0)),
+                'previous_stream_count': 0,
+                'average_daily_stream_count': 0.0,
                 # Standard fields
                 'days_in_promotion': days_in_promotion,
                 'stage_of_promotion': stage_of_promotion,
@@ -490,31 +489,6 @@ class SongManager:
             logger.error(f"Error deleting song {song_id} for user {user_id}: {str(e)}")
             return False
     
-    def _get_stage_from_days(self, days_in_promotion: int) -> str:
-        """
-        Get promotion stage based on days_in_promotion.
-
-        Stage mapping:
-        - 0-14 days: upcoming
-        - 15-28 days: live
-        - 29-42 days: twilight
-        - 43+ days: retired
-
-        Args:
-            days_in_promotion (int): Current days in promotion
-
-        Returns:
-            str: Stage name ('upcoming', 'live', 'twilight', or 'retired')
-        """
-        if days_in_promotion <= 14:
-            return 'upcoming'
-        elif days_in_promotion <= 28:
-            return 'live'
-        elif days_in_promotion <= 42:
-            return 'twilight'
-        else:
-            return 'retired'
-
     def _determine_initial_stage_and_days(
         self,
         user_id: str,

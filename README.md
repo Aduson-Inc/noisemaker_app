@@ -16,7 +16,7 @@ Automates social media posting across 8 platforms with auto-generated content an
 
 **Backend:**
 - FastAPI (Python 3.12)
-- DynamoDB (26 tables)
+- DynamoDB (12 tables)
 
 
 **Infrastructure:**

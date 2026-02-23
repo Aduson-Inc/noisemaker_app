@@ -10,7 +10,7 @@ NOISEMAKER is a music promotion SaaS platform for independent artists. It automa
 
 Monorepo with two main components:
 - **frontend/** — Next.js 15 (App Router), TypeScript, React 19, Tailwind CSS, shadcn/ui
-- **backend/** — FastAPI (Python 3.12), DynamoDB (26 tables, `noisemaker-*` prefix), AWS Lambda
+- **backend/** — FastAPI (Python 3.12), DynamoDB (12 tables, `noisemaker-*` prefix), AWS Lambda
 
 Infrastructure is AWS-native: DynamoDB, S3 (`noisemakerpromobydoowopp`), Lambda, EventBridge, Parameter Store. Region: `us-east-2`.
 

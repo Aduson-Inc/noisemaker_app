@@ -66,8 +66,7 @@ async def get_user_songs(
                 album_art=song.get('art_url', ''),
                 fire_mode=song.get('fire_mode', False),
                 fire_mode_triggered=song.get('fire_mode_triggered', False),
-                baseline_streams=song.get('baseline_streams', 0),
-                current_streams=song.get('current_streams', 0),
+                spotify_popularity=song.get('spotify_popularity', 0),
                 added_at=song.get('created_at', '')
             )
             songs_list.append(song_info)
@@ -108,15 +107,14 @@ async def get_upcoming_post(
         # Query scheduled posts table
         # Filter by user_id and song_id, get the next pending post
         try:
-            response = dynamodb_client.query_table(
+            response = dynamodb_client.query_items(
                 table_name='noisemaker-scheduled-posts',
                 key_condition='user_id = :uid',
-                expression_values={':uid': user_id},
-                filter_expression='song_id = :sid AND post_status = :status',
-                filter_values={':sid': song_id, ':status': 'pending'}
+                expression_values={':uid': user_id, ':sid': song_id, ':status': 'pending'},
+                filter_expression='song_id = :sid AND post_status = :status'
             )
-        except:
-            # If query fails, return None (no upcoming post)
+        except Exception as e:
+            logger.error(f"Error querying upcoming posts for song {song_id}: {e}")
             return {"upcoming_post": None}
 
         if not response or len(response) == 0:
@@ -180,7 +178,7 @@ async def get_user_stats(
         stats = UserStatsResponse(
             monthly_listeners=user_profile.get('monthly_listeners', 0),
             follower_growth=user_profile.get('follower_growth', 0),
-            total_streams=user_profile.get('total_streams', 0),
+            total_posts=user_profile.get('total_posts', 0),
             engagement_rate=user_profile.get('engagement_rate', 0.0)
         )
 
@@ -315,21 +313,14 @@ async def update_post_caption(
     try:
         logger.info(f"Updating caption for post {post_id}")
 
-        # Get post to verify ownership
-        post_key = {'post_id': post_id}
+        # Get post using composite key (PK=user_id, SK=post_id)
+        post_key = {'user_id': current_user_id, 'post_id': post_id}
         post_data = dynamodb_client.get_item('noisemaker-scheduled-posts', post_key)
 
         if not post_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Post not found"
-            )
-
-        # Verify user owns this post
-        if post_data.get('user_id') != current_user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot modify other user's posts"
             )
 
         # Update caption
@@ -374,21 +365,14 @@ async def approve_post(
     try:
         logger.info(f"Approving post {post_id}")
 
-        # Get post to verify ownership
-        post_key = {'post_id': post_id}
+        # Get post using composite key (PK=user_id, SK=post_id)
+        post_key = {'user_id': current_user_id, 'post_id': post_id}
         post_data = dynamodb_client.get_item('noisemaker-scheduled-posts', post_key)
 
         if not post_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Post not found"
-            )
-
-        # Verify user owns this post
-        if post_data.get('user_id') != current_user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot approve other user's posts"
             )
 
         # Update status to approved
@@ -433,21 +417,14 @@ async def reject_post(
     try:
         logger.info(f"Rejecting post {post_id}")
 
-        # Get post to verify ownership
-        post_key = {'post_id': post_id}
+        # Get post using composite key (PK=user_id, SK=post_id)
+        post_key = {'user_id': current_user_id, 'post_id': post_id}
         post_data = dynamodb_client.get_item('noisemaker-scheduled-posts', post_key)
 
         if not post_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Post not found"
-            )
-
-        # Verify user owns this post
-        if post_data.get('user_id') != current_user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot reject other user's posts"
             )
 
         # Update status to rejected

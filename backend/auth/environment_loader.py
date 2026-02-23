@@ -112,7 +112,10 @@ class EnvironmentLoader:
         return self.get('huggingface_token', '')
     
     def get_jwt_secret(self) -> str:
-        return self.get('jwt_secret_key', 'fallback-secret-for-dev')
+        secret = self.get('jwt_secret_key', '')
+        if not secret:
+            raise RuntimeError("JWT secret key not found in Parameter Store.")
+        return secret
     
     def get_discord_webhook_url(self) -> str:
         return self.get('discord_webhook_url', '')

@@ -153,8 +153,7 @@ class SongInfo(BaseModel):
     album_art: Optional[str] = None
     fire_mode: bool = False
     fire_mode_triggered: bool = False
-    baseline_streams: int = 0
-    current_streams: int = 0
+    spotify_popularity: int = 0
     added_at: str
 
 class AddSongRequest(BaseModel):
@@ -206,7 +205,7 @@ class DashboardResponse(BaseModel):
 class UserStatsResponse(BaseModel):
     monthly_listeners: int = 0
     follower_growth: int = 0
-    total_streams: int = 0
+    total_posts: int = 0
     engagement_rate: float = 0.0
 
 class PlatformStats(BaseModel):

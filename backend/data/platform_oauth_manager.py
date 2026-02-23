@@ -187,39 +187,34 @@ class PlatformOAuthManager:
         if platform in self._oauth_credentials:
             return self._oauth_credentials[platform]
 
+        # Discord uses webhooks, no OAuth credentials needed
+        if platform == 'discord':
+            return {}
+
+        credentials = {}
+        # Get client_id
         try:
-            # Discord uses webhooks, no OAuth credentials needed
-            if platform == 'discord':
-                return {}
-
-            credentials = {}
-            # Get client_id
-            try:
-                credentials['client_id'] = self.ssm_client.get_parameter(
-                    Name=f'/noisemaker/{platform}_client_id',
-                    WithDecryption=True
-                )['Parameter']['Value']
-            except Exception as e:
-                logger.error(f"Failed to get client_id for {platform}: {e}")
-                raise ValueError(f"OAuth credentials not configured for {platform}")
-
-            # Get client_secret
-            try:
-                credentials['client_secret'] = self.ssm_client.get_parameter(
-                    Name=f'/noisemaker/{platform}_client_secret',
-                    WithDecryption=True
-                )['Parameter']['Value']
-            except Exception as e:
-                logger.error(f"Failed to get client_secret for {platform}: {e}")
-                raise ValueError(f"OAuth credentials not configured for {platform}")
-
-            # Cache credentials
-            self._oauth_credentials[platform] = credentials
-            return credentials
-
+            credentials['client_id'] = self.ssm_client.get_parameter(
+                Name=f'/noisemaker/{platform}_client_id',
+                WithDecryption=True
+            )['Parameter']['Value']
         except Exception as e:
-            logger.error(f"Error getting platform credentials for {platform}: {e}")
-            raise
+            logger.error(f"Failed to get client_id for {platform}: {e}")
+            raise ValueError(f"OAuth credentials not configured for {platform}")
+
+        # Get client_secret
+        try:
+            credentials['client_secret'] = self.ssm_client.get_parameter(
+                Name=f'/noisemaker/{platform}_client_secret',
+                WithDecryption=True
+            )['Parameter']['Value']
+        except Exception as e:
+            logger.error(f"Failed to get client_secret for {platform}: {e}")
+            raise ValueError(f"OAuth credentials not configured for {platform}")
+
+        # Cache credentials
+        self._oauth_credentials[platform] = credentials
+        return credentials
 
     def _generate_state(self, user_id: str, platform: str) -> str:
         """
@@ -248,7 +243,7 @@ class PlatformOAuthManager:
             # Continue anyway - state validation will fail gracefully
         return state
 
-    def _validate_state(self, state: str, user_id: str, platform: str) -> bool:
+    def _validate_state(self, state: str, user_id: str, platform: str) -> Optional[Dict]:
         """
         Validate CSRF state token.
         Args:
@@ -256,7 +251,7 @@ class PlatformOAuthManager:
             user_id: User identifier
             platform: Platform name
         Returns:
-            True if valid, False otherwise
+            state_data dict if valid, None otherwise
         """
         try:
             # Get state from DynamoDB
@@ -264,24 +259,23 @@ class PlatformOAuthManager:
             state_data = dynamodb_client.get_item(self.state_table, key)
             if not state_data:
                 logger.warning(f"State not found: {state}")
-                return False
+                return None
             # Check expiration
             expires_at = datetime.fromisoformat(state_data['expires_at'])
             if datetime.utcnow() > expires_at:
                 logger.warning(f"State expired: {state}")
-                # Delete expired state
                 dynamodb_client.delete_item(self.state_table, key)
-                return False
+                return None
             # Validate user_id and platform match
             if state_data['user_id'] != user_id or state_data['platform'] != platform:
                 logger.warning(f"State mismatch for user {user_id}, platform {platform}")
-                return False
+                return None
             # Delete state after successful validation (one-time use)
             dynamodb_client.delete_item(self.state_table, key)
-            return True
+            return state_data
         except Exception as e:
             logger.error(f"Error validating state: {e}")
-            return False
+            return None
 
     def _generate_pkce_challenge(self) -> Tuple[str, str]:
         """
@@ -350,7 +344,7 @@ class PlatformOAuthManager:
             logger.info(f"Initiated OAuth for user {user_id}, platform {platform}")
             return {
                 'success': True,
-                'authorization_url': authorization_url,
+                'auth_url': authorization_url,
                 'state': state,
                 'platform': platform
             }
@@ -376,7 +370,8 @@ class PlatformOAuthManager:
         """
         try:
             # Validate state for CSRF protection
-            if not self._validate_state(state, user_id, platform):
+            state_data = self._validate_state(state, user_id, platform)
+            if not state_data:
                 return {
                     'success': False,
                     'error': 'Invalid or expired state token (CSRF protection)'
@@ -391,12 +386,9 @@ class PlatformOAuthManager:
                 'redirect_uri': redirect_uri,
                 'grant_type': 'authorization_code'
             }
-            # Add PKCE code_verifier for Twitter
+            # Add PKCE code_verifier for Twitter (stored in state_data during initiate_oauth)
             if platform == 'twitter' and config.get('uses_pkce'):
-                # Retrieve code_verifier from state storage
-                state_key = {'state': state}
-                state_data = dynamodb_client.get_item(self.state_table, state_key)
-                if state_data and 'code_verifier' in state_data:
+                if state_data.get('code_verifier'):
                     token_data['code_verifier'] = state_data['code_verifier']
             # Exchange code for tokens
             headers = {'Accept': 'application/json'}
