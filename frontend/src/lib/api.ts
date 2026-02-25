@@ -169,10 +169,11 @@ export const platformAPI = {
   /**
    * Handle platform OAuth callback
    */
-  handleCallback: async (platform: string, code: string, userId: string) => {
+  handleCallback: async (platform: string, code: string, userId: string, state: string) => {
     return apiClient.post<OAuthCallbackResponse>(`/api/oauth/${platform}/callback`, {
       code,
-      user_id: userId
+      user_id: userId,
+      state
     });
   },
 

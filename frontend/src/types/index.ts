@@ -115,6 +115,7 @@ export interface OAuthResponse {
 
 export interface OAuthCallbackResponse {
   success: boolean;
+  message?: string;
 }
 
 export interface PaymentCheckoutResponse {

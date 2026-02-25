@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { songsAPI } from '@/lib/api';
+import { songsAPI, platformAPI } from '@/lib/api';
 
 /**
  * ADD SONGS - Final Onboarding Step (Step 4 of 4)
@@ -123,15 +123,28 @@ export default function AddSongsPage() {
 
   useEffect(() => {
     setMounted(true);
-    const userId = getUserId();
-    if (!userId) {
-      setError('Please sign in to continue');
-      setIsLoading(false);
-      return;
-    }
-    const storedTier = localStorage.getItem('user_tier') as 'talent' | 'star' | 'legend';
-    if (storedTier) setTier(storedTier);
-    setIsLoading(false);
+    const fetchTier = async () => {
+      const userId = getUserId();
+      if (!userId) {
+        setError('Please sign in to continue');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const response = await platformAPI.getConnectionsStatus(userId);
+        const fetchedTier = response.data.subscription_tier;
+        if (fetchedTier && fetchedTier !== 'pending') {
+          setTier(fetchedTier);
+        }
+      } catch (err) {
+        console.error('Error fetching user tier:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTier();
   }, []);
 
   const validateUrl = useCallback(async (songId: number, url: string) => {
