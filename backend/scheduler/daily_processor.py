@@ -27,7 +27,7 @@ from spotify.popularity_tracker import popularity_tracker
 from spotify.fire_mode_analyzer import fire_mode_analyzer
 from data.song_manager import song_manager as _global_song_manager
 from data.user_manager import user_manager as _global_user_manager
-from notifications.milestone_tracker import MilestoneTracker
+from notifications.milestone_tracker import check_follower_milestones
 
 # Note: Frank Art generation is handled separately by marketplace.frank_art_generator
 # and runs as an independent Lambda/cron job, not as part of user daily processing
@@ -57,8 +57,6 @@ class DailyProcessor:
         self.track_analyzer = TrackAnalyzer()
         self.song_manager = _global_song_manager
         self.user_manager = _global_user_manager
-        self.milestone_tracker = MilestoneTracker()
-
         logger.info("Daily processor initialized")
 
     def process_user_daily(self, user_id: str) -> Dict[str, Any]:
@@ -348,19 +346,19 @@ class DailyProcessor:
                 fire_mode_active = song.get("fire_mode", False)
                 fire_mode_start_date = song.get("fire_mode_entered_at", "")
                 peak_popularity = song.get("peak_popularity_in_fire_mode", 0)
-                popularity_history = song.get("popularity_history", [])
-                has_been_on_fire_before = song.get("has_been_on_fire_before", False)
+                days_below_peak = int(song.get("days_below_peak", 0))
+                previous_fire_peak = int(song.get("previous_fire_peak", 0))
                 days_in_promotion = song.get("days_in_promotion", 0)
 
-                # Check Fire Mode eligibility using analyzer with re-entry tracking
+                # Check Fire Mode eligibility using analyzer
                 fire_mode_result = fire_mode_analyzer.calculate_fire_mode_eligibility(
                     user_baseline=user_baseline,
                     song_current_popularity=current_popularity,
                     song_fire_mode_active=fire_mode_active,
                     song_fire_mode_start_date=fire_mode_start_date,
                     song_peak_popularity=peak_popularity,
-                    song_popularity_history=popularity_history,
-                    has_been_on_fire_before=has_been_on_fire_before
+                    days_below_peak=days_below_peak,
+                    song_previous_fire_peak=previous_fire_peak,
                 )
 
                 song_fire_results[song_id] = {
@@ -384,7 +382,6 @@ class DailyProcessor:
                 logger.debug(
                     f"Track {track_id}: popularity={current_popularity}, "
                     f"fire_mode={fire_mode_active}, tier={user_tier}, "
-                    f"has_been_on_fire={has_been_on_fire_before}, "
                     f"reason={fire_mode_result.get('reason', 'N/A')}"
                 )
 
@@ -411,6 +408,12 @@ class DailyProcessor:
                 current_popularity = data['current_popularity']
                 peak_popularity = data['peak_popularity']
 
+                # Store days_below_peak from analyzer result
+                returned_days_below = fire_mode_result.get('days_below_peak', 0)
+                self.song_manager.update_song_field(user_id, song_id, {
+                    'days_below_peak': returned_days_below,
+                })
+
                 # Handle Fire Mode state transitions
                 if song_id == fire_mode_winner_id:
                     # Activate Fire Mode for the winner
@@ -419,6 +422,10 @@ class DailyProcessor:
                     self.song_manager.activate_fire_mode(user_id, song_id, phase)
                     fire_mode_active = True
                 elif fire_mode_active and fire_mode_result.get('should_exit', False):
+                    # Save peak as previous_fire_peak before deactivation zeros it
+                    self.song_manager.update_song_field(user_id, song_id, {
+                        'previous_fire_peak': peak_popularity,
+                    })
                     # Deactivate Fire Mode
                     logger.info(f"Deactivating Fire Mode for song {song_id} (track {track_id})")
                     self.song_manager.deactivate_fire_mode(user_id, song_id)
@@ -528,34 +535,16 @@ class DailyProcessor:
 
     def _update_promotion_counters(self, user_id: str, songs: List[Dict[str, Any]]):
         """
-        Update promotion day counters for all songs.
-
-        Args:
-            user_id (str): User identifier
-            songs (List[Dict[str, Any]]): Song data
+        Update last_promoted timestamp for all songs.
+        NOTE: days_in_promotion and stage_of_promotion are incremented by
+        daily_orchestrator.py (the Lambda) — NOT here. This avoids double-increment.
         """
         try:
             for song in songs:
-                current_day = int(song.get("days_in_promotion", 1))
-                new_day = current_day + 1
-
-                # Update in database
-                song_update = {
-                    "days_in_promotion": new_day,
-                    "last_promoted": datetime.now().isoformat(),
-                }
-
-                # Check if song should retire (day 43+)
-                if new_day > 42:
-                    song_update["promotion_status"] = "retired"
-                    logger.info(
-                        f"Song {song.get('spotify_track_id')} retired for user {user_id}"
-                    )
-
                 self.song_manager.update_song_field(
-                    user_id, song.get("song_id"), song_update
+                    user_id, song.get("song_id"),
+                    {"last_promoted": datetime.now().isoformat()}
                 )
-
         except Exception as e:
             logger.error(
                 f"Error updating promotion counters for user {user_id}: {str(e)}"
@@ -592,10 +581,8 @@ class DailyProcessor:
                         }
                         all_milestones.append(milestone_data)
 
-                        # Trigger notification
-                        self.milestone_tracker.send_milestone_notification(
-                            milestone_data
-                        )
+                        # Log milestone achievement (notification system TBD)
+                        logger.info(f"Milestone achieved: {milestone_data}")
 
             return all_milestones
 
@@ -667,74 +654,6 @@ class DailyProcessor:
             )
             return {}
 
-    def _update_fire_mode_status(
-        self, user_id: str, track_metrics: List[TrackMetrics]
-    ) -> None:
-        """
-        Update fire mode status in database based on analyzer results.
-
-        Args:
-            user_id (str): User identifier
-            track_metrics (List[TrackMetrics]): Track analysis results
-        """
-        try:
-            for metrics in track_metrics:
-                current_song_data = self.song_manager.get_song_by_spotify_id(
-                    user_id, metrics.track_id
-                )
-                if not current_song_data:
-                    continue
-
-                current_fire_mode = current_song_data.get("fire_mode", False)
-                new_fire_mode = metrics.fire_mode_active
-
-                # Update fire mode history in database
-                updates = {}
-                fire_mode_history = current_song_data.get("fire_mode_history", [])
-                today = datetime.now().strftime("%Y-%m-%d")
-
-                # Update today's eligibility in history
-                if not fire_mode_history or fire_mode_history[-1].get("date") != today:
-                    fire_mode_history.append(
-                        {"date": today, "eligible": metrics.fire_mode_eligible}
-                    )
-                else:
-                    fire_mode_history[-1]["eligible"] = metrics.fire_mode_eligible
-
-                # Keep only last 7 days
-                if len(fire_mode_history) > 7:
-                    fire_mode_history = fire_mode_history[-7:]
-
-                updates["fire_mode_history"] = fire_mode_history
-
-                # Handle fire mode status changes
-                if new_fire_mode != current_fire_mode:
-                    if new_fire_mode:
-                        # Activate fire mode
-                        logger.info(
-                            f"Activating fire mode for track {metrics.track_id}"
-                        )
-                        self.song_manager.activate_fire_mode(user_id, metrics.track_id)
-                    else:
-                        # Deactivate fire mode
-                        logger.info(
-                            f"Deactivating fire mode for track {metrics.track_id}"
-                        )
-                        self.song_manager.deactivate_fire_mode(
-                            user_id, metrics.track_id
-                        )
-                else:
-                    # Just update the history
-                    self.song_manager.update_song_field(
-                        user_id, metrics.track_id, updates
-                    )
-
-        except Exception as e:
-            logger.error(
-                f"Error updating fire mode status for user {user_id}: {str(e)}"
-            )
-
-
 # Global processor instance
 daily_processor = DailyProcessor()
 
@@ -783,12 +702,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# RUBRIC SELF-ASSESSMENT:
-# ✅ Environment variables for secrets: YES - Loads from secure Parameter Store
-# ✅ Follow all instructions exactly: YES - Orchestrates complete daily workflow as specified
-# ✅ Secure: YES - Error handling, input validation, secure data processing
-# ✅ Scalable: YES - Efficient processing, modular design, proper resource management
-# ✅ Spam-proof: YES - Input validation, error handling, rate limiting via components
-# SCORE: 10/10 ✅

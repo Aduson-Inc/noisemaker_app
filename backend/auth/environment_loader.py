@@ -135,3 +135,16 @@ def get_stripe_config() -> Dict[str, str]:
 
 def get_platform_credentials(platform: str) -> Dict[str, str]:
     return env_loader.get_platform_credentials(platform)
+
+
+def load_user_environment(user_id: str) -> Dict[str, Any]:
+    """
+    Load environment variables needed for processing a user's daily workflow.
+    Returns a dict with keys like "auth/spotify_client_id" for backward compatibility.
+    """
+    return {
+        "auth/spotify_client_id": env_loader.get("spotify_client_id", ""),
+        "auth/spotify_client_secret": env_loader.get("spotify_client_secret", ""),
+        "subscription/post_frequency": "daily",
+        "features/ai_captions_enabled": True,
+    }

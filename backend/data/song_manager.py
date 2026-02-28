@@ -101,10 +101,6 @@ class SongManager:
                 'peak_popularity_in_fire_mode': 0,
                 'fire_mode_phase': None,  # 1-3 for Tiers 1-3, None for Tier 4
                 'fire_mode_entered_at': '',
-                # OLD: Stream-based fields (deprecated, kept for backward compatibility)
-                'stream_count': int(song_data.get('stream_count', 0)),
-                'previous_stream_count': 0,
-                'average_daily_stream_count': 0.0,
                 # Standard fields
                 'days_in_promotion': days_in_promotion,
                 'stage_of_promotion': stage_of_promotion,
@@ -579,6 +575,235 @@ class SongManager:
             return []
 
 
+    def apply_onboarding_stagger(self, user_id: str) -> Dict[str, Any]:
+        """
+        Apply staggered promotion start days at end of onboarding.
+        Called when user completes onboarding. Idempotent.
+
+        Rules:
+            1 song:  days_in_promotion=0, active
+            2 songs: Best=14 (live), Other=0 (upcoming)
+            3 songs: Best=14 (live), Second=28 (twilight), Upcoming=0 (upcoming)
+
+        Returns:
+            Dict with success status and details
+        """
+        try:
+            # Get all draft/active songs
+            all_songs = dynamodb_client.query_items(
+                self.table_name,
+                'user_id = :user_id',
+                filter_expression='promotion_status IN (:s1, :s2)',
+                expression_values={
+                    ':user_id': user_id,
+                    ':s1': 'active',
+                    ':s2': 'draft',
+                }
+            )
+
+            if not all_songs:
+                return {"success": False, "error": "No songs found"}
+
+            # Skip already staggered songs
+            unstaggered = [s for s in all_songs if not s.get('stagger_applied')]
+            if not unstaggered:
+                return {"success": True, "message": "Already staggered", "songs_updated": 0}
+
+            count = len(all_songs)
+            updated = 0
+
+            # Sort by popularity descending to identify best/second/upcoming
+            all_songs.sort(
+                key=lambda s: int(s.get('spotify_popularity', 0)),
+                reverse=True
+            )
+
+            for idx, song in enumerate(all_songs):
+                sid = song['song_id']
+
+                if song.get('stagger_applied'):
+                    continue
+
+                if count == 1:
+                    days, stage = 0, 'upcoming'
+                elif count == 2:
+                    if idx == 0:
+                        days, stage = 14, 'live'
+                    else:
+                        days, stage = 0, 'upcoming'
+                else:  # 3 songs
+                    if idx == 0:
+                        days, stage = 14, 'live'
+                    elif idx == 1:
+                        days, stage = 28, 'twilight'
+                    else:
+                        days, stage = 0, 'upcoming'
+
+                # Check pending status for upcoming songs with future go-live
+                status = 'active'
+                release_date_str = song.get('release_date', '')
+                if days == 0 and release_date_str:
+                    try:
+                        release_dt = datetime.strptime(release_date_str[:10], '%Y-%m-%d')
+                        promo_start = release_dt - timedelta(days=14)
+                        if datetime.now() < promo_start:
+                            status = 'pending'
+                    except ValueError:
+                        pass
+
+                self.update_song_field(user_id, sid, {
+                    'days_in_promotion': days,
+                    'stage_of_promotion': stage,
+                    'promotion_status': status,
+                    'stagger_applied': True,
+                    'promo_start_date': datetime.now().isoformat()[:10],
+                })
+                updated += 1
+
+            logger.info(f"Applied stagger for user {user_id}: {updated} songs updated")
+            return {"success": True, "songs_updated": updated}
+
+        except Exception as e:
+            logger.error(f"Error applying stagger for user {user_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def check_can_add_song(self, user_id: str) -> Dict[str, Any]:
+        """
+        Check if user can add a new song (post-onboarding rules).
+
+        Rules:
+            - Max 3 active/pending songs
+            - Youngest song must be >= day 15
+
+        Returns:
+            Dict with can_add (bool), reason (str), next_slot_opens_in_days (int|None)
+        """
+        try:
+            songs = dynamodb_client.query_items(
+                self.table_name,
+                'user_id = :user_id',
+                filter_expression='promotion_status IN (:s1, :s2)',
+                expression_values={
+                    ':user_id': user_id,
+                    ':s1': 'active',
+                    ':s2': 'pending',
+                }
+            )
+
+            slots_used = len(songs)
+
+            if slots_used >= self.max_active_songs:
+                return {
+                    "can_add": False,
+                    "reason": "All 3 song slots are in use",
+                    "slots_used": slots_used,
+                    "next_slot_opens_in_days": None,
+                }
+
+            if not songs:
+                return {
+                    "can_add": True,
+                    "reason": "No active songs",
+                    "slots_used": 0,
+                    "next_slot_opens_in_days": None,
+                }
+
+            # Find youngest song
+            youngest_days = min(int(s.get('days_in_promotion', 0)) for s in songs)
+
+            if youngest_days < 15:
+                days_until = 15 - youngest_days
+                youngest_song = min(songs, key=lambda s: int(s.get('days_in_promotion', 0)))
+                song_name = youngest_song.get('song', 'your song')
+                return {
+                    "can_add": False,
+                    "reason": f"You can add a new song when '{song_name}' reaches day 15. That's in {days_until} days.",
+                    "slots_used": slots_used,
+                    "next_slot_opens_in_days": days_until,
+                }
+
+            return {
+                "can_add": True,
+                "reason": "Slot available",
+                "slots_used": slots_used,
+                "next_slot_opens_in_days": None,
+            }
+
+        except Exception as e:
+            logger.error(f"Error checking song add eligibility for {user_id}: {e}")
+            return {"can_add": False, "reason": "Error checking eligibility"}
+
+    def get_song_slots(self, user_id: str) -> Dict[str, Any]:
+        """
+        Get song slot data for dashboard (Feature 8).
+
+        Returns:
+            Dict with songs list, slot counts, and add eligibility
+        """
+        try:
+            songs = dynamodb_client.query_items(
+                self.table_name,
+                'user_id = :user_id',
+                filter_expression='promotion_status IN (:s1, :s2, :s3)',
+                expression_values={
+                    ':user_id': user_id,
+                    ':s1': 'active',
+                    ':s2': 'pending',
+                    ':s3': 'draft',
+                }
+            )
+
+            song_list = []
+            for song in songs:
+                song_list.append({
+                    "song_id": song.get("song_id", ""),
+                    "title": song.get("song", ""),
+                    "artist": song.get("artist_title", ""),
+                    "album_art_url": song.get("art_url", ""),
+                    "days_in_promotion": int(song.get("days_in_promotion", 0)),
+                    "promotion_status": song.get("promotion_status", ""),
+                    "go_live_date": song.get("release_date") or None,
+                    "stage_of_promotion": song.get("stage_of_promotion", "upcoming"),
+                    "has_audio": bool(song.get("audio_s3_key")),
+                    "has_clip": bool(song.get("audio_clip_start")),
+                    "fire_mode": song.get("fire_mode", False),
+                })
+
+            slots_used = len([s for s in song_list if s["promotion_status"] in ("active", "pending")])
+
+            # Check add eligibility
+            can_add = False
+            next_slot_opens = None
+            if slots_used < 3:
+                active_pending = [s for s in song_list if s["promotion_status"] in ("active", "pending")]
+                if active_pending:
+                    youngest = min(s["days_in_promotion"] for s in active_pending)
+                    if youngest >= 15:
+                        can_add = True
+                    else:
+                        next_slot_opens = 15 - youngest
+                else:
+                    can_add = True
+
+            return {
+                "songs": song_list,
+                "slots_total": 3,
+                "slots_used": slots_used,
+                "can_add_song": can_add,
+                "next_slot_opens_in_days": next_slot_opens,
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting song slots for {user_id}: {e}")
+            return {
+                "songs": [],
+                "slots_total": 3,
+                "slots_used": 0,
+                "can_add_song": True,
+                "next_slot_opens_in_days": None,
+            }
+
+
 # Global song manager instance
 song_manager = SongManager()
 
@@ -604,10 +829,3 @@ def update_user_song(user_id: str, song_data: Dict[str, Any]) -> bool:
     return song_manager.update_song(user_id, song_data)
 
 
-# RUBRIC SELF-ASSESSMENT:
-# ✅ Environment variables for secrets: YES - Uses DynamoDB client with secure credentials
-# ✅ Follow all instructions exactly: YES - Complete song lifecycle management as specified
-# ✅ Secure: YES - Input validation, error handling, proper access controls
-# ✅ Scalable: YES - Efficient queries, proper indexing, batch operations support
-# ✅ Spam-proof: YES - Input validation, limits enforcement, proper error handling
-# SCORE: 10/10 ✅

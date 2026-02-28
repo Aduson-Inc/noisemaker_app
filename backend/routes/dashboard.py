@@ -32,6 +32,33 @@ router = APIRouter(prefix="/api/user", tags=["Dashboard"])
 
 
 
+@router.get("/{user_id}/song-slots")
+async def get_song_slots(
+    user_id: str,
+    current_user_id: str = Depends(get_current_user_id)
+) -> Dict[str, Any]:
+    """
+    Get song slot data for dashboard: songs, slot counts, add eligibility.
+    """
+    try:
+        if user_id != current_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot access other user's song slots"
+            )
+
+        return song_manager.get_song_slots(user_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting song slots for {user_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch song slots"
+        )
+
+
 @router.get("/{user_id}/songs", response_model=List[SongInfo])
 async def get_user_songs(
     user_id: str,

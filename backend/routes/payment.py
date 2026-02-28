@@ -193,7 +193,8 @@ async def confirm_payment(
 
         # Generate new JWT token in case it was lost during Stripe redirect
         from middleware.auth import create_jwt_token
-        token = create_jwt_token(user_id)
+        user_profile = user_manager.get_user_profile(user_id) or {}
+        token = create_jwt_token(user_id, name=user_profile.get('name', ''), email=user_profile.get('email', ''))
 
         return PaymentConfirmResponse(
             success=True,

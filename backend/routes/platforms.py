@@ -35,7 +35,8 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 @router.get("/{platform}/connect", response_model=OAuthResponse)
 async def get_platform_auth_url(
     platform: str,
-    user_id: str = Query(..., description="User ID requesting platform connection")
+    user_id: str = Query(..., description="User ID requesting platform connection"),
+    current_user_id: str = Depends(get_current_user_id)
 ) -> OAuthResponse:
     """
     Get OAuth authorization URL for a platform.
@@ -48,6 +49,13 @@ async def get_platform_auth_url(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unsupported platform: {platform}. Supported platforms: {', '.join(SUPPORTED_PLATFORMS)}"
+            )
+
+        # Verify user can only initiate OAuth for themselves
+        if user_id != current_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot initiate OAuth for another user"
             )
 
         logger.info(f"Generating {platform} auth URL for user: {user_id}")
@@ -142,7 +150,8 @@ async def handle_platform_callback(
 @router.get("/{platform}/status")
 async def check_platform_status(
     platform: str,
-    user_id: str = Query(..., description="User ID to check connection")
+    user_id: str = Query(..., description="User ID to check connection"),
+    current_user_id: str = Depends(get_current_user_id)
 ):
     """
     Check if a specific platform is connected for user.
@@ -155,6 +164,13 @@ async def check_platform_status(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unsupported platform: {platform}"
+            )
+
+        # Verify user can only check their own status
+        if user_id != current_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot check another user's platform status"
             )
 
         logger.info(f"Checking {platform} status for user: {user_id}")

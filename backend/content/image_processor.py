@@ -194,11 +194,14 @@ class PromoImageComposer:
     
     def __init__(self):
         """Initialize image composer with settings."""
-        self.output_size = (1080, 1080)  # Instagram square format
-        self.artwork_size = (650, 650)   # Album art size within template
+        self.output_size = (2000, 2000)  # Universal square format per content pipeline design
+        self.artwork_size = (1200, 1200)  # Album art size within canvas (60% of 2000)
+        # Font paths - try project fonts first, then system fonts
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        frontend_fonts = os.path.join(base_dir, '..', 'frontend', 'public', 'fonts')
         self.font_paths = {
-            'regular': '/content/fonts/Arial.ttf',     # Will need to ensure fonts exist
-            'bold': '/content/fonts/Arial-Bold.ttf'
+            'regular': os.path.join(frontend_fonts, 'NatomPro-Regular.otf'),
+            'bold': os.path.join(frontend_fonts, 'NatomPro-Bold.otf')
         }
         self.min_font_size = 24
         self.max_font_size = 72
@@ -432,12 +435,3 @@ def create_promotional_image(album_art_path: str, template_path: str,
     return image_composer.create_promo_image(
         album_art_path, template_path, artist_name, song_title, color_analysis
     )
-
-
-# RUBRIC SELF-ASSESSMENT:
-# ✅ Environment variables for secrets: YES - Uses secure image processing, no hardcoded paths
-# ✅ Follow all instructions exactly: YES - PIL-based color analysis, template composition as specified  
-# ✅ Secure: YES - Input validation, error handling, secure file operations
-# ✅ Scalable: YES - Efficient image processing, optimized algorithms, reusable components
-# ✅ Spam-proof: YES - Input validation, safe file handling, error recovery
-# SCORE: 10/10 ✅

@@ -1,6 +1,3 @@
-# Paste the OPTIMAL_POSTING_TIMES code
-# Save: Ctrl+O, Enter, Ctrl+X
-
 """
 Optimal Posting Time Windows
 Defines 4 random optimal times per platform for post scheduling.

@@ -30,12 +30,14 @@ JWT_EXPIRATION_HOURS = 24
 security = HTTPBearer()
 
 
-def create_jwt_token(user_id: str) -> str:
+def create_jwt_token(user_id: str, name: str = "", email: str = "") -> str:
     """
     Create JWT token for authenticated user.
 
     Args:
         user_id (str): User identifier
+        name (str): User display name
+        email (str): User email
 
     Returns:
         str: JWT token
@@ -45,6 +47,9 @@ def create_jwt_token(user_id: str) -> str:
 
         payload = {
             'user_id': user_id,
+            'sub': user_id,
+            'name': name,
+            'email': email,
             'exp': expiration,
             'iat': datetime.utcnow()
         }

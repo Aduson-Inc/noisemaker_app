@@ -77,11 +77,12 @@ class FrankArtManager:
             'bundle_15': {'amount': 1999, 'count': 15, 'label': '$19.99'}
         }
 
-        # Stripe price IDs
+        # Stripe price IDs - loaded from SSM Parameter Store
+        from auth.environment_loader import env_loader
         self.stripe_prices = {
-            'single': 'price_1SbCJRHIG2GktxbO3sR6LDGs',
-            'bundle_5': 'price_1SbCJbHIG2GktxbOxbAlLbLK',
-            'bundle_15': 'price_1SbCJwHIG2GktxbOQQaXWhVm'
+            'single': env_loader.get('stripe_price_artwork_single', ''),
+            'bundle_5': env_loader.get('stripe_price_artwork_5pack', ''),
+            'bundle_15': env_loader.get('stripe_price_artwork_15pack', ''),
         }
 
         logger.info("Frank's Garage art manager initialized")

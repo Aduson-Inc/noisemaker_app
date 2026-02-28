@@ -221,7 +221,7 @@ def _composite_image(
 # PUBLIC API
 # =============================================================================
 
-def generate_content(song_data: dict, platform: str, user_id: str) -> dict:
+def generate_content(song_data: dict, platform: str, user_id: str, song_count: int = 3) -> dict:
     """
     Generate a promotional image for a song on a specific platform.
 
@@ -306,6 +306,7 @@ def generate_content(song_data: dict, platform: str, user_id: str) -> dict:
             "platform": platform,
             "caption": caption,
             "color_palette": song_data["color_palette"],
+            "song_count": song_count,
             "posted_to": {},
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "active",

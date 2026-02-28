@@ -1,7 +1,99 @@
 @import "tailwindcss";
 
 /* ============================================
-   NOiSEMaKER - Cosmic Theme
+   NOiSEMaKER - Natom Pro Font Faces
+   ============================================ */
+
+@font-face {
+  font-family: 'Natom Pro';
+  src: url('/fonts/NatomPro-Light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Natom Pro';
+  src: url('/fonts/NatomPro-LightItalic.otf') format('opentype');
+  font-weight: 300;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Natom Pro';
+  src: url('/fonts/NatomPro-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Natom Pro';
+  src: url('/fonts/NatomPro-RegularItalic.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Natom Pro';
+  src: url('/fonts/NatomPro-Medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Natom Pro';
+  src: url('/fonts/NatomPro-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Natom Pro';
+  src: url('/fonts/NatomPro-BoldItalic.otf') format('opentype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Natom Pro';
+  src: url('/fonts/NatomPro-Black.otf') format('opentype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Natom Pro Title';
+  src: url('/fonts/NatomPro-TitleRegular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Natom Pro Title';
+  src: url('/fonts/NatomPro-TitleBold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Natom Pro Title';
+  src: url('/fonts/NatomPro-TitleBlack.otf') format('opentype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ============================================
+   NOiSEMaKER - Theme
    ============================================ */
 
 /* Theme Colors */
@@ -13,6 +105,12 @@
   --dark-bg: #0a0a0f;
   --glass-bg: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.1);
+  --nm-blue: #00a8ff;
+  --nm-cyan: #00d4ff;
+  --nm-deep: #010a18;
+  --nm-navy: #0a1628;
+  --font-display: 'Natom Pro Title', 'Natom Pro', 'Bebas Neue', sans-serif;
+  --font-body: 'Natom Pro', 'Inter', system-ui, sans-serif;
 }
 
 /* Base Styles */

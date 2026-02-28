@@ -151,6 +151,53 @@ export const songsAPI = {
    */
   getUserSongs: async (userId: string) => {
     return apiClient.get(`/api/songs/user/${userId}`);
+  },
+
+  /**
+   * Get presigned S3 upload URL for audio file
+   */
+  getAudioUploadUrl: async (songId: string, contentType: string) => {
+    return apiClient.post(`/api/songs/${songId}/audio-upload-url`, {
+      content_type: contentType
+    });
+  },
+
+  /**
+   * Confirm audio upload completed (triggers WAV→MP3 conversion if needed)
+   */
+  confirmAudioUpload: async (songId: string) => {
+    return apiClient.post(`/api/songs/${songId}/audio-upload-confirm`);
+  },
+
+  /**
+   * Save 10-second audio clip timestamps
+   */
+  saveAudioClip: async (songId: string, clipStart: number, clipEnd: number) => {
+    return apiClient.put(`/api/songs/${songId}/audio-clip`, {
+      clip_start: clipStart,
+      clip_end: clipEnd
+    });
+  },
+
+  /**
+   * Get presigned audio URL + clip timestamps
+   */
+  getAudioUrl: async (songId: string) => {
+    return apiClient.get(`/api/songs/${songId}/audio-url`);
+  },
+
+  /**
+   * Apply onboarding stagger to all user's draft songs
+   */
+  applyStagger: async () => {
+    return apiClient.post('/api/songs/apply-stagger');
+  },
+
+  /**
+   * Check if user can add a new song (day-15 gate + max 3)
+   */
+  canAddSong: async () => {
+    return apiClient.get('/api/songs/can-add');
   }
 };
 
@@ -321,6 +368,13 @@ export const marketplaceAPI = frankGarageAPI;
 // ============================================================================
 
 export const dashboardAPI = {
+  /**
+   * Get song slots with slot counts and add eligibility
+   */
+  getSongSlots: async (userId: string) => {
+    return apiClient.get(`/api/user/${userId}/song-slots`);
+  },
+
   /**
    * Get user's songs
    */

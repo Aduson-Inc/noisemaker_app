@@ -23,7 +23,7 @@ Notes:
       NOT the get_position() helper.
 """
 
-from backend.scheduler.schedule_grids import THREE_SONG_GRIDS
+from scheduler.schedule_grids import THREE_SONG_GRIDS
 
 
 def get_tomorrows_posts(user_data: dict) -> list[dict]:

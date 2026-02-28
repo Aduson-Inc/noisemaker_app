@@ -63,16 +63,14 @@ export default function HowItWorksPage() {
 
           {/* Content card - brutalist style */}
           <div className="mb-12 w-full max-w-2xl border-4 border-white bg-black p-8 md:p-12">
-            {/* TODO: Replace this placeholder text with actual content (100-200 words) */}
-            {/* You can edit this directly via GitHub app */}
             <p className="mb-6 text-lg leading-relaxed text-gray-300 md:text-xl">
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.
+              NOiSEMaKER promotes your music automatically across every social platform you connect. Every day, we create fresh promotional content featuring your album art and post it at the optimal time for maximum engagement.
             </p>
             <p className="mb-6 text-lg leading-relaxed text-gray-300 md:text-xl">
-              Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+              Your songs move through a 42-day cycle: 14 days of building hype before release, 14 days of peak promotion when it drops, and 14 days of follow-through. If your song catches fire, we detect the spike and shift all promotion power behind it automatically.
             </p>
             <p className="text-lg leading-relaxed text-gray-300 md:text-xl">
-              Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam.
+              First up: connect your social platforms. The more you connect, the wider your reach. You can always add more later from your dashboard.
             </p>
           </div>
 
@@ -93,7 +91,7 @@ export default function HowItWorksPage() {
         {/* ========== FOOTER ========== */}
         <footer className="border-t-4 border-white bg-black px-6 py-6 text-center">
           <p className="text-xs font-bold uppercase tracking-widest text-gray-600">
-            © 2025 NOiSEMaKER by DooWopp
+            © 2026 NOiSEMaKER by DooWopp
           </p>
         </footer>
       </div>

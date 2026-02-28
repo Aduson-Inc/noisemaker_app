@@ -1,2 +1,2 @@
-// Landing Page - Gen Z Bold Design (December 2025)
-export { default } from './page-genz';
+// Landing Page — NOiSEMaKER
+export { default } from './page-landing';

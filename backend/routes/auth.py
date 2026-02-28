@@ -184,7 +184,7 @@ async def signup(request: SignUpRequest, response: Response) -> AuthResponseEnha
         except Exception as e:
             logger.warning(f"Failed to initialize art tokens: {e}")
 
-        token = create_jwt_token(user_id)
+        token = create_jwt_token(user_id, name=request.name, email=request.email)
         logger.info(f"User {user_id} created with onboarding initialized")
 
         # Set auth cookie with proper security (HttpOnly/Secure in production)
@@ -223,10 +223,10 @@ async def signin(request: SignInRequest, response: Response) -> AuthResponseEnha
         if not user_auth.authenticate_user(user_id, request.password):
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
-        token = create_jwt_token(user_id)
-
         # Get full user profile for smart routing
         user_data = user_manager.get_user_profile(user_id) or {}
+
+        token = create_jwt_token(user_id, name=user_data.get('name', ''), email=user_data.get('email', request.email))
 
         # Check for pending milestones
         pending_milestone = user_manager.get_pending_milestone(user_id)
@@ -307,10 +307,10 @@ async def exchange_token(request: ExchangeTokenRequest, response: Response) -> E
 
             logger.info(f"Created OAuth user: {user_id} via {request.provider}")
 
-        token = create_jwt_token(user_id)
-
         # Get user state for smart routing
         user_data = user_manager.get_user_profile(user_id) or {}
+
+        token = create_jwt_token(user_id, name=user_data.get('name', request.name), email=request.email)
         pending_milestone = user_manager.get_pending_milestone(user_id)
         redirect_to = _get_redirect_path(user_data, pending_milestone)
         onboarding_status = user_data.get('onboarding_status', 'tier_pending')

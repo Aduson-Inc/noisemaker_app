@@ -184,9 +184,26 @@ class BaselineCalculator:
             # Take 5 most recent
             recent_5 = sorted_tracks[:5]
 
-            # Calculate simple average of however many tracks we have
-            total_popularity = sum(track['popularity'] for track in recent_5)
-            raw_average = total_popularity / len(recent_5)
+            # Exclude tracks with 0 popularity from average (Feature 7: null safety)
+            with_popularity = [t for t in recent_5 if t.get('popularity', 0) > 0]
+
+            if not with_popularity:
+                # All tracks are 0 popularity — set baseline to 0, don't error
+                logger.info(f"All tracks for user {user_id} have 0 popularity")
+                self._store_baseline(user_id, 0, 1, [t['id'] for t in recent_5], len(recent_5), 0.0)
+                return {
+                    'baseline': 0,
+                    'tier': 1,
+                    'track_ids': [t['id'] for t in recent_5],
+                    'track_count': len(recent_5),
+                    'raw_average': 0.0,
+                    'success': True,
+                    'message': 'All tracks at 0 popularity'
+                }
+
+            # Calculate simple average of tracks with real popularity
+            total_popularity = sum(track['popularity'] for track in with_popularity)
+            raw_average = total_popularity / len(with_popularity)
 
             # Floor with minimum of 5 (not ceiling)
             baseline = int(raw_average)

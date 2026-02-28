@@ -650,7 +650,7 @@ export default function PricingV2() {
         {/* Footer */}
         <footer className="border-t-4 border-white bg-black px-6 py-6 text-center">
           <p className="text-xs font-bold uppercase tracking-widest text-gray-600">
-            © 2025 NOiSEMaKER by DooWopp
+            © 2026 NOiSEMaKER by DooWopp
           </p>
         </footer>
       </div>

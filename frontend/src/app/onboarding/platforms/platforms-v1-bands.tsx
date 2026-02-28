@@ -44,6 +44,12 @@ const PLATFORMS: Platform[] = [
 ];
 
 const TIER_COLORS = {
+  pending: {
+    bg: 'bg-white',
+    text: 'text-white',
+    border: 'border-white',
+    hex: '#ffffff'
+  },
   talent: {
     bg: 'bg-cyan-400',
     text: 'text-cyan-400',
@@ -69,7 +75,7 @@ export default function PlatformsBandsV1() {
 
   const [connections, setConnections] = useState<Record<string, PlatformConnection>>({});
   const [platformLimit, setPlatformLimit] = useState<number>(2);
-  const [tier, setTier] = useState<'talent' | 'star' | 'legend'>('talent');
+  const [tier, setTier] = useState<'pending' | 'talent' | 'star' | 'legend'>('talent');
   const [isLoading, setIsLoading] = useState(true);
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -358,7 +364,7 @@ export default function PlatformsBandsV1() {
         {/* Footer */}
         <footer className="border-t-4 border-white/20 bg-black px-6 py-6 text-center">
           <p className="text-xs font-bold uppercase tracking-widest text-gray-600">
-            © 2025 NOiSEMaKER by DooWopp
+            © 2026 NOiSEMaKER by DooWopp
           </p>
         </footer>
       </div>

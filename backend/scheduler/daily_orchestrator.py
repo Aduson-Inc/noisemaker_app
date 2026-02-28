@@ -269,7 +269,7 @@ def _process_user(user: dict) -> dict:
             song_lookup[song_id] = song
 
             # Generate new content
-            result = generate_content(_build_song_data(song), platform, user_id)
+            result = generate_content(_build_song_data(song), platform, user_id, song_count)
             if not result:
                 logger.error(f"Content generation failed for {song_id}/{platform}")
                 continue
@@ -348,10 +348,17 @@ def _process_user(user: dict) -> dict:
 
         elif current_days < MAX_PROMO_DAYS:
             new_days = current_days + 1
+            # Derive stage from days
+            if new_days <= 14:
+                new_stage = "upcoming"
+            elif new_days <= 28:
+                new_stage = "live"
+            else:
+                new_stage = "twilight"
             songs_table.update_item(
                 Key={"user_id": user_id, "song_id": sid},
-                UpdateExpression="SET days_in_promotion = :d",
-                ExpressionAttributeValues={":d": new_days},
+                UpdateExpression="SET days_in_promotion = :d, stage_of_promotion = :st",
+                ExpressionAttributeValues={":d": new_days, ":st": new_stage},
             )
 
         else:
@@ -359,8 +366,8 @@ def _process_user(user: dict) -> dict:
             new_days = current_days + 1
             songs_table.update_item(
                 Key={"user_id": user_id, "song_id": sid},
-                UpdateExpression="SET days_in_promotion = :d, promotion_status = :s",
-                ExpressionAttributeValues={":d": new_days, ":s": "retired"},
+                UpdateExpression="SET days_in_promotion = :d, promotion_status = :s, stage_of_promotion = :st",
+                ExpressionAttributeValues={":d": new_days, ":s": "retired", ":st": "retired"},
             )
             logger.info(f"Song {sid} retired at day {new_days}")
 
@@ -421,7 +428,7 @@ def _process_extended_songs(
             continue
 
         # Generate new content (always new for extended — no reuse)
-        result = generate_content(_build_song_data(song), platform, user_id)
+        result = generate_content(_build_song_data(song), platform, user_id, song_count=1)
         if not result:
             logger.error(f"Extended content gen failed for {song_id}/{platform}")
             continue

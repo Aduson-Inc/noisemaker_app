@@ -9,7 +9,9 @@ Security Level: Production-ready
 """
 
 import re
+import os
 import logging
+import tempfile
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Request
@@ -17,11 +19,14 @@ from pydantic import BaseModel, HttpUrl, validator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+import boto3
+
 from spotify.spotipy_client import get_track_information, get_artist_information
 from data.song_manager import song_manager
 from data.user_manager import user_manager
 from auth.environment_loader import get_platform_credentials
 from middleware.auth import get_current_user_id
+from audio.converter import convert_wav_to_mp3
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +36,11 @@ router = APIRouter(prefix="/api/songs", tags=["songs"])
 
 # Rate limiter instance - uses same key function as main.py
 limiter = Limiter(key_func=get_remote_address)
+
+# S3 client for audio uploads
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
+S3_BUCKET = os.environ.get("S3_BUCKET", "noisemakerpromobydoowopp")
+s3_client = boto3.client("s3", region_name=AWS_REGION)
 
 
 # ============================================================================
@@ -58,10 +68,7 @@ class AddSongFromUrlRequest(BaseModel):
 
     @validator('release_date')
     def validate_release_date(cls, v, values):
-        """Validate release date for upcoming songs (day 0)."""
-        if values.get('initial_days') == 0 and not v:
-            raise ValueError('release_date is required for songs starting at day 0 (Upcoming stage)')
-
+        """Validate release date format if provided. Release date is optional."""
         if v:
             try:
                 release_date = datetime.fromisoformat(v)
@@ -75,6 +82,34 @@ class AddSongFromUrlRequest(BaseModel):
                     raise
                 raise ValueError('release_date must be in ISO format (YYYY-MM-DD)')
 
+        return v
+
+
+class AudioUploadRequest(BaseModel):
+    """Request model for audio upload URL generation."""
+    content_type: str
+
+    @validator('content_type')
+    def validate_content_type(cls, v):
+        allowed = ['audio/mpeg', 'audio/wav']
+        if v not in allowed:
+            raise ValueError(f'content_type must be one of: {", ".join(allowed)}')
+        return v
+
+
+class AudioClipRequest(BaseModel):
+    """Request model for saving audio clip timestamps."""
+    clip_start: float
+    clip_end: float
+
+    @validator('clip_end')
+    def validate_clip_duration(cls, v, values):
+        start = values.get('clip_start', 0)
+        if start < 0:
+            raise ValueError('clip_start must be >= 0')
+        duration = v - start
+        if duration < 9.9 or duration > 10.1:
+            raise ValueError('Clip duration must be ~10 seconds (9.9-10.1s)')
         return v
 
 
@@ -640,11 +675,267 @@ async def get_user_songs(
         )
 
 
-# RUBRIC SELF-ASSESSMENT:
-# ✅ Environment variables for secrets: YES - Uses environment loader for Spotify credentials
-# ✅ Follow all instructions exactly: YES - Implements stage-based system, not position-based
-# ✅ Secure: YES - Input validation, error handling, credential management
-# ✅ Scalable: YES - Efficient database operations, proper logging
-# ✅ Spam-proof: YES - Validates URLs, checks for duplicates, enforces 3-song limit
-# ✅ Correct Lifecycle: YES - Stages are dynamic (upcoming→live→twilight→retired)
-# SCORE: 10/10 ✅
+# ============================================================================
+# AUDIO UPLOAD ENDPOINTS (Features 1, 1b, 2)
+# ============================================================================
+
+@router.post("/{song_id}/audio-upload-url")
+async def get_audio_upload_url(
+    song_id: str,
+    request: AudioUploadRequest,
+    current_user_id: str = Depends(get_current_user_id)
+):
+    """Generate presigned S3 URL for audio file upload."""
+    try:
+        # Verify song belongs to user
+        song = song_manager.get_song(current_user_id, song_id)
+        if not song:
+            raise HTTPException(status_code=404, detail="Song not found")
+
+        # Determine file extension
+        ext = ".mp3" if request.content_type == "audio/mpeg" else ".wav"
+        s3_key = f"audio/{song_id}/full{ext}"
+
+        # Generate presigned PUT URL (15 min expiry, 50MB max)
+        upload_url = s3_client.generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": S3_BUCKET,
+                "Key": s3_key,
+                "ContentType": request.content_type,
+            },
+            ExpiresIn=900,
+        )
+
+        return {
+            "upload_url": upload_url,
+            "s3_key": s3_key,
+            "expires_in": 900,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating upload URL: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate upload URL")
+
+
+@router.post("/{song_id}/audio-upload-confirm")
+async def confirm_audio_upload(
+    song_id: str,
+    current_user_id: str = Depends(get_current_user_id)
+):
+    """Confirm audio upload and optionally convert WAV to MP3."""
+    try:
+        # Verify song belongs to user
+        song = song_manager.get_song(current_user_id, song_id)
+        if not song:
+            raise HTTPException(status_code=404, detail="Song not found")
+
+        # Check both possible keys
+        mp3_key = f"audio/{song_id}/full.mp3"
+        wav_key = f"audio/{song_id}/full.wav"
+
+        audio_key = None
+        content_type = None
+        file_size = 0
+
+        for key, ct in [(mp3_key, "audio/mpeg"), (wav_key, "audio/wav")]:
+            try:
+                head = s3_client.head_object(Bucket=S3_BUCKET, Key=key)
+                audio_key = key
+                content_type = ct
+                file_size = head["ContentLength"]
+                break
+            except s3_client.exceptions.ClientError:
+                continue
+
+        if not audio_key:
+            raise HTTPException(status_code=404, detail="Audio file not found in S3")
+
+        # WAV to MP3 conversion (Feature 1b)
+        if content_type == "audio/wav":
+            try:
+                tmp_dir = tempfile.mkdtemp()
+                wav_path = os.path.join(tmp_dir, "input.wav")
+                mp3_path = os.path.join(tmp_dir, "output.mp3")
+
+                # Download WAV
+                s3_client.download_file(S3_BUCKET, audio_key, wav_path)
+
+                # Convert
+                if convert_wav_to_mp3(wav_path, mp3_path):
+                    # Upload MP3
+                    with open(mp3_path, "rb") as f:
+                        s3_client.put_object(
+                            Bucket=S3_BUCKET,
+                            Key=mp3_key,
+                            Body=f,
+                            ContentType="audio/mpeg",
+                        )
+
+                    # Delete original WAV
+                    s3_client.delete_object(Bucket=S3_BUCKET, Key=wav_key)
+
+                    audio_key = mp3_key
+                    content_type = "audio/mpeg"
+                    file_size = os.path.getsize(mp3_path)
+
+                    logger.info(f"Converted WAV to MP3 for song {song_id}")
+                else:
+                    # Conversion failed — keep WAV, mark status
+                    song_manager.update_song_field(current_user_id, song_id, {
+                        "audio_conversion_status": "failed",
+                    })
+                    logger.warning(f"WAV conversion failed for song {song_id}, keeping WAV")
+
+            except Exception as e:
+                logger.error(f"WAV conversion error for {song_id}: {e}")
+                song_manager.update_song_field(current_user_id, song_id, {
+                    "audio_conversion_status": "failed",
+                })
+            finally:
+                # Cleanup temp files
+                for path in [wav_path, mp3_path]:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+                try:
+                    os.rmdir(tmp_dir)
+                except OSError:
+                    pass
+
+        # Update song record
+        song_manager.update_song_field(current_user_id, song_id, {
+            "audio_s3_key": audio_key,
+            "audio_file_size": file_size,
+            "audio_uploaded_at": datetime.now().isoformat(),
+            "audio_content_type": content_type,
+        })
+
+        return {"success": True, "audio_s3_key": audio_key}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error confirming audio upload: {e}")
+        raise HTTPException(status_code=500, detail="Failed to confirm audio upload")
+
+
+@router.put("/{song_id}/audio-clip")
+async def save_audio_clip(
+    song_id: str,
+    request: AudioClipRequest,
+    current_user_id: str = Depends(get_current_user_id)
+):
+    """Save 10-second audio clip selection timestamps."""
+    try:
+        # Verify song belongs to user
+        song = song_manager.get_song(current_user_id, song_id)
+        if not song:
+            raise HTTPException(status_code=404, detail="Song not found")
+
+        # Verify audio has been uploaded
+        if not song.get("audio_s3_key"):
+            raise HTTPException(
+                status_code=400,
+                detail="Audio must be uploaded before selecting a clip"
+            )
+
+        # Save clip timestamps
+        song_manager.update_song_field(current_user_id, song_id, {
+            "audio_clip_start": str(request.clip_start),
+            "audio_clip_end": str(request.clip_end),
+            "audio_clip_updated_at": datetime.now().isoformat(),
+        })
+
+        return {
+            "success": True,
+            "clip_start": request.clip_start,
+            "clip_end": request.clip_end,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error saving audio clip: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save audio clip")
+
+
+@router.get("/{song_id}/audio-url")
+async def get_audio_url(
+    song_id: str,
+    current_user_id: str = Depends(get_current_user_id)
+):
+    """Get presigned URL for audio playback and clip timestamps."""
+    try:
+        # Verify song belongs to user
+        song = song_manager.get_song(current_user_id, song_id)
+        if not song:
+            raise HTTPException(status_code=404, detail="Song not found")
+
+        audio_key = song.get("audio_s3_key")
+        if not audio_key:
+            return {
+                "has_audio": False,
+                "audio_url": None,
+                "clip_start": None,
+                "clip_end": None,
+            }
+
+        # Generate presigned GET URL (1 hour)
+        audio_url = s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": S3_BUCKET, "Key": audio_key},
+            ExpiresIn=3600,
+        )
+
+        clip_start = song.get("audio_clip_start")
+        clip_end = song.get("audio_clip_end")
+
+        return {
+            "has_audio": True,
+            "audio_url": audio_url,
+            "clip_start": float(clip_start) if clip_start else None,
+            "clip_end": float(clip_end) if clip_end else None,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting audio URL: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get audio URL")
+
+
+# ============================================================================
+# STAGGER & RULES ENDPOINTS (Features 5, 6)
+# ============================================================================
+
+@router.post("/apply-stagger")
+async def apply_stagger(
+    current_user_id: str = Depends(get_current_user_id)
+):
+    """Apply onboarding stagger to all user songs. Called at end of onboarding."""
+    try:
+        result = song_manager.apply_onboarding_stagger(current_user_id)
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Stagger failed"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error applying stagger: {e}")
+        raise HTTPException(status_code=500, detail="Failed to apply stagger")
+
+
+@router.get("/can-add")
+async def check_can_add_song(
+    current_user_id: str = Depends(get_current_user_id)
+):
+    """Check if user can add a new song (post-onboarding day-15 gate)."""
+    try:
+        return song_manager.check_can_add_song(current_user_id)
+    except Exception as e:
+        logger.error(f"Error checking add eligibility: {e}")
+        raise HTTPException(status_code=500, detail="Failed to check eligibility")

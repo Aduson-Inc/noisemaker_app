@@ -84,6 +84,29 @@ export interface Post {
   };
 }
 
+// Song Slot (dashboard card data from GET /api/user/{userId}/song-slots)
+export interface SongSlot {
+  song_id: string;
+  title: string;
+  artist: string;
+  album_art_url: string;
+  days_in_promotion: number;
+  promotion_status: string;
+  go_live_date: string | null;
+  stage_of_promotion: string;
+  has_audio: boolean;
+  has_clip: boolean;
+  fire_mode: boolean;
+}
+
+export interface SongSlotsResponse {
+  songs: SongSlot[];
+  slots_total: number;
+  slots_used: number;
+  can_add_song: boolean;
+  next_slot_opens_in_days: number | null;
+}
+
 // API Response types
 export interface AuthResponse {
   user_id: string;
@@ -132,7 +155,7 @@ export interface PlatformStatusResponse {
   connections: { [platform: string]: boolean | { connected?: boolean; username?: string; account_type?: string } };
   selected_platforms: string[];
   platform_limit: number;
-  subscription_tier: 'talent' | 'star' | 'legend';
+  subscription_tier: 'pending' | 'talent' | 'star' | 'legend';
 }
 
 export interface ValidateArtistResponse {

@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { songsAPI, platformAPI } from '@/lib/api';
+
+const AudioClipSelector = lazy(() => import('@/components/AudioClipSelector'));
 
 /**
  * ADD SONGS - Final Onboarding Step (Step 4 of 4)
@@ -41,6 +43,16 @@ interface SongState {
   isValid: boolean;
   error: string | null;
   validatedData: ValidatedSong | null;
+  // Audio upload state
+  dbSongId: string | null;
+  audioUploading: boolean;
+  audioUploadProgress: number;
+  audioUploaded: boolean;
+  audioUrl: string | null;
+  clipStart: number | null;
+  clipEnd: number | null;
+  clipSaved: boolean;
+  audioSkipped: boolean;
 }
 
 const SONG_FORMS: SongForm[] = [
@@ -103,10 +115,16 @@ export default function AddSongsPage() {
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
+  const emptySongState: SongState = {
+    url: '', releaseDate: '', isValidating: false, isValid: false, error: null, validatedData: null,
+    dbSongId: null, audioUploading: false, audioUploadProgress: 0, audioUploaded: false,
+    audioUrl: null, clipStart: null, clipEnd: null, clipSaved: false, audioSkipped: false,
+  };
+
   const [songs, setSongs] = useState<Record<number, SongState>>({
-    1: { url: '', releaseDate: '', isValidating: false, isValid: false, error: null, validatedData: null },
-    2: { url: '', releaseDate: '', isValidating: false, isValid: false, error: null, validatedData: null },
-    3: { url: '', releaseDate: '', isValidating: false, isValid: false, error: null, validatedData: null },
+    1: { ...emptySongState },
+    2: { ...emptySongState },
+    3: { ...emptySongState },
   });
 
   const getUserId = (): string | null => {
@@ -171,6 +189,20 @@ export default function AddSongsPage() {
       const data = response.data;
 
       if (data.valid) {
+        // Immediately create song as draft so we have a song_id for audio upload
+        const form = SONG_FORMS.find((f) => f.id === songId);
+        let dbSongId: string | null = null;
+        try {
+          const addRes = await songsAPI.addSongFromUrl(
+            url,
+            form?.initialDays ?? 0,
+            undefined // release_date added later via apply_stagger
+          );
+          dbSongId = addRes.data?.song_id || addRes.data?.song?.song_id || null;
+        } catch (addErr) {
+          console.error('Failed to create draft song:', addErr);
+        }
+
         setSongs((prev) => ({
           ...prev,
           [songId]: {
@@ -178,6 +210,7 @@ export default function AddSongsPage() {
             isValidating: false,
             isValid: true,
             error: null,
+            dbSongId,
             validatedData: {
               track_id: data.track_id!,
               name: data.name!,
@@ -227,7 +260,87 @@ export default function AddSongsPage() {
   const handleClearSong = (songId: number) => {
     setSongs((prev) => ({
       ...prev,
-      [songId]: { url: '', releaseDate: '', isValidating: false, isValid: false, error: null, validatedData: null },
+      [songId]: { ...emptySongState },
+    }));
+  };
+
+  const handleAudioUpload = async (songId: number, file: File) => {
+    const songState = songs[songId];
+    if (!songState.dbSongId) {
+      setSongs((prev) => ({ ...prev, [songId]: { ...prev[songId], error: 'Song not saved yet' } }));
+      return;
+    }
+
+    const contentType = file.type === 'audio/wav' ? 'audio/wav' : 'audio/mpeg';
+
+    setSongs((prev) => ({
+      ...prev,
+      [songId]: { ...prev[songId], audioUploading: true, audioUploadProgress: 0, error: null },
+    }));
+
+    try {
+      // Step 1: Get presigned upload URL
+      const urlRes = await songsAPI.getAudioUploadUrl(songState.dbSongId, contentType);
+      const { upload_url } = urlRes.data;
+
+      // Step 2: Upload to S3 via XHR for progress tracking
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            setSongs((prev) => ({
+              ...prev,
+              [songId]: { ...prev[songId], audioUploadProgress: pct },
+            }));
+          }
+        };
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`)));
+        xhr.onerror = () => reject(new Error('Upload failed'));
+        xhr.open('PUT', upload_url);
+        xhr.setRequestHeader('Content-Type', contentType);
+        xhr.send(file);
+      });
+
+      // Step 3: Confirm upload (triggers WAV→MP3 conversion if needed)
+      await songsAPI.confirmAudioUpload(songState.dbSongId);
+
+      // Step 4: Get presigned audio URL for playback
+      const audioRes = await songsAPI.getAudioUrl(songState.dbSongId);
+      const audioData = audioRes.data;
+
+      setSongs((prev) => ({
+        ...prev,
+        [songId]: {
+          ...prev[songId],
+          audioUploading: false,
+          audioUploadProgress: 100,
+          audioUploaded: true,
+          audioUrl: audioData.audio_url,
+          clipStart: audioData.clip_start,
+          clipEnd: audioData.clip_end,
+        },
+      }));
+    } catch (err) {
+      console.error('Audio upload failed:', err);
+      setSongs((prev) => ({
+        ...prev,
+        [songId]: { ...prev[songId], audioUploading: false, audioUploadProgress: 0, error: 'Audio upload failed' },
+      }));
+    }
+  };
+
+  const handleSkipAudio = (songId: number) => {
+    setSongs((prev) => ({
+      ...prev,
+      [songId]: { ...prev[songId], audioSkipped: true },
+    }));
+  };
+
+  const handleClipSaved = (songId: number, clipStart: number, clipEnd: number) => {
+    setSongs((prev) => ({
+      ...prev,
+      [songId]: { ...prev[songId], clipStart, clipEnd, clipSaved: true },
     }));
   };
 
@@ -250,16 +363,13 @@ export default function AddSongsPage() {
     setError(null);
 
     try {
-      for (const form of SONG_FORMS) {
-        const song = songs[form.id];
-        if (song.isValid && song.validatedData) {
-          await songsAPI.addSongFromUrl(song.url, form.initialDays, form.requiresReleaseDate ? song.releaseDate : undefined);
-        }
-      }
+      // Songs are already created as drafts during validation.
+      // Apply stagger to transition draft → active with correct days.
+      await songsAPI.applyStagger();
       router.push('/dashboard');
     } catch (err: unknown) {
       const axiosError = err as { response?: { data?: { detail?: string } } };
-      setError(axiosError.response?.data?.detail || 'Failed to add songs');
+      setError(axiosError.response?.data?.detail || 'Failed to complete onboarding');
       setIsSubmitting(false);
     }
   };
@@ -501,6 +611,102 @@ export default function AddSongsPage() {
                                 <p className="mt-2 text-xs text-gray-600">When does this track go live? (min. 14 days from today)</p>
                               </div>
                             )}
+
+                            {/* Audio Upload Section (Optional) */}
+                            {song.dbSongId && !song.audioSkipped && (
+                              <div className="mt-4 rounded-lg border-2 border-white/10 bg-black/30 p-4 animate-fadeIn">
+                                {song.audioUploaded && song.audioUrl ? (
+                                  /* Waveform Clip Selector */
+                                  <div>
+                                    <h4 className="mb-3 text-xs font-black uppercase tracking-widest text-white/50">
+                                      Select 10-Second Clip
+                                    </h4>
+                                    <Suspense fallback={
+                                      <div className="flex items-center gap-2 py-4">
+                                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" />
+                                        <span className="text-xs text-white/40">Loading waveform...</span>
+                                      </div>
+                                    }>
+                                      <AudioClipSelector
+                                        songId={song.dbSongId!}
+                                        audioUrl={song.audioUrl}
+                                        initialClipStart={song.clipStart}
+                                        initialClipEnd={song.clipEnd}
+                                        onClipSaved={(start, end) => handleClipSaved(form.id, start, end)}
+                                      />
+                                    </Suspense>
+                                    {song.clipSaved && (
+                                      <p className="mt-2 text-xs font-bold text-lime-400">
+                                        Clip saved! You can adjust it later from your dashboard.
+                                      </p>
+                                    )}
+                                  </div>
+                                ) : song.audioUploading ? (
+                                  /* Upload Progress */
+                                  <div>
+                                    <h4 className="mb-2 text-xs font-black uppercase tracking-widest text-white/50">
+                                      Uploading Audio...
+                                    </h4>
+                                    <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                                      <div
+                                        className="h-full bg-cyan-400 transition-all"
+                                        style={{ width: `${song.audioUploadProgress}%` }}
+                                      />
+                                    </div>
+                                    <p className="mt-1 text-xs text-white/30">{song.audioUploadProgress}%</p>
+                                  </div>
+                                ) : (
+                                  /* Upload Prompt */
+                                  <div>
+                                    <h4 className="mb-2 text-xs font-black uppercase tracking-widest text-white/50">
+                                      Upload Your Song (Optional)
+                                    </h4>
+                                    <p className="mb-3 text-xs text-white/30">
+                                      Upload your audio to select a 10-second promo clip for social media posts.
+                                    </p>
+                                    <div className="flex items-center gap-3">
+                                      <label className={`cursor-pointer border-2 ${tierColors.border} bg-transparent px-4 py-2 text-xs font-black uppercase tracking-wider ${tierColors.text} transition-all hover:bg-white/5`}>
+                                        Choose File
+                                        <input
+                                          type="file"
+                                          accept=".mp3,.wav,audio/mpeg,audio/wav"
+                                          className="hidden"
+                                          onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                              if (file.size > 50 * 1024 * 1024) {
+                                                setSongs((prev) => ({
+                                                  ...prev,
+                                                  [form.id]: { ...prev[form.id], error: 'File too large (max 50MB)' },
+                                                }));
+                                                return;
+                                              }
+                                              handleAudioUpload(form.id, file);
+                                            }
+                                          }}
+                                        />
+                                      </label>
+                                      <button
+                                        onClick={() => handleSkipAudio(form.id)}
+                                        className="text-xs text-white/30 underline hover:text-white/50"
+                                      >
+                                        Skip for now
+                                      </button>
+                                    </div>
+                                    <p className="mt-2 text-xs text-white/20">
+                                      MP3 or WAV, max 50MB
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Audio skipped message */}
+                            {song.audioSkipped && (
+                              <p className="mt-2 text-xs text-white/30 animate-fadeIn">
+                                You can add audio later from your dashboard.
+                              </p>
+                            )}
                           </div>
                         ) : (
                           /* Input Form */
@@ -612,7 +818,7 @@ export default function AddSongsPage() {
         {/* Footer */}
         <footer className="border-t-2 border-white/10 bg-black px-6 py-8 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.3em] text-gray-700">
-            © 2025 NOiSEMaKER by DooWopp
+            © 2026 NOiSEMaKER by DooWopp
           </p>
         </footer>
       </div>
