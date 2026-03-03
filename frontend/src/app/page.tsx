@@ -1,2 +1,2 @@
 // Landing Page — NOiSEMaKER
-export { default } from './page-landing';
+export { default } from './page-genz';
