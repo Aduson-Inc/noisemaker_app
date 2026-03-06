@@ -83,7 +83,7 @@ async def internal_error_handler(request, exc):
     )
 
 # Import and include routers
-from routes import auth, platforms, dashboard, payment, frank_art, songs
+from routes import auth, platforms, dashboard, payment, frank_art, songs, templates
 
 # Auth routes
 app.include_router(auth.router)
@@ -106,5 +106,8 @@ app.include_router(payment.router)
 
 # Frank's Garage routes (AI-generated artwork marketplace)
 app.include_router(frank_art.router)
+
+# Admin template management routes
+app.include_router(templates.router)
 
 logger.info("NoiseMaker API initialized successfully with all routes")

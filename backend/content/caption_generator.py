@@ -134,20 +134,21 @@ class CaptionGenerator:
                                                    'https://api.grok.ai/v1/chat/completions')
         return self._grok_api_url
     
-    def generate_caption(self, request: CaptionRequest) -> Optional[GeneratedCaption]:
+    def generate_caption(self, request: CaptionRequest, context: str = "") -> Optional[GeneratedCaption]:
         """
         Generate AI-powered caption for music promotion.
-        
+
         Args:
             request (CaptionRequest): Caption generation parameters
-            
+            context (str): Optional RAG context for personalization
+
         Returns:
             Optional[GeneratedCaption]: Generated caption or None if failed
         """
         try:
             # Prepare AI prompt
-            prompt = self._build_ai_prompt(request)
-            
+            prompt = self._build_ai_prompt(request, context=context)
+
             # Generate caption using Grok AI
             ai_response = self._call_grok_ai(prompt)
             
@@ -173,20 +174,28 @@ class CaptionGenerator:
             logger.error(f"Error generating caption: {str(e)}")
             return self._generate_fallback_caption(request)
     
-    def _build_ai_prompt(self, request: CaptionRequest) -> str:
+    def _build_ai_prompt(self, request: CaptionRequest, context: str = "") -> str:
         """Build AI prompt for caption generation."""
         genre_style = self.genre_styles.get(request.genre.lower(), self.genre_styles['pop'])
         platform_limit = self.platform_limits[request.platform]['max_chars']
-        
+
+        # Build context section if RAG context is available
+        context_section = ""
+        if context:
+            context_section = f"""
+        Artist Context (use this to match the artist's personality and current situation):
+        {context}
+        """
+
         prompt = f"""
         Create a {genre_style['tone']} social media caption for a {request.genre} song promotion on {request.platform}.
-        
+
         Song Details:
         - Artist: {request.artist_name}
         - Title: {request.song_title}
         - Genre: {request.genre}
         - Mood: {request.mood}
-        
+        {context_section}
         Requirements:
         - Maximum {platform_limit} characters
         - Minimalist and engaging tone
@@ -195,14 +204,14 @@ class CaptionGenerator:
         - Use genre-appropriate language: {', '.join(genre_style['keywords'])}
         - End with 3-5 relevant hashtags
         - Do not include streaming URLs (will be added separately)
-        
+
         Style: {genre_style['tone']}, authentic, engaging but not overly promotional
-        
+
         Return format:
         CAPTION: [main caption text with emojis]
         HASHTAGS: #hashtag1 #hashtag2 #hashtag3
         """
-        
+
         return prompt
     
     def _call_grok_ai(self, prompt: str) -> Optional[str]:
@@ -587,24 +596,42 @@ def _template_fallback(song_name: str, artist_name: str, genre: str, platform: s
     )
 
 
-def generate_caption(song_name: str, artist_name: str, genre: str, platform: str) -> str:
+def generate_caption(
+    song_name: str, artist_name: str, genre: str, platform: str,
+    context: str = "",
+) -> str:
     """
     Simple interface for content_generator.py.
     Tries Grok AI first, falls back to templates.
     Returns a ready-to-use caption string with hashtags included.
+
+    Args:
+        song_name: Song title
+        artist_name: Artist name
+        genre: Music genre
+        platform: Target social media platform
+        context: Optional RAG context string (from rag_pipeline.build_caption_context)
+                 injected into the AI prompt for personalized captions
     """
     try:
         generator = get_caption_generator()
+        # Build mood from context if available
+        mood = "energetic"
+        if context and "FIRE MODE ACTIVE" in context:
+            mood = "urgent and exciting"
+        elif context and "trending" in context.lower():
+            mood = "confident and celebratory"
+
         request = CaptionRequest(
             artist_name=artist_name,
             song_title=song_name,
             genre=genre,
-            mood="energetic",
+            mood=mood,
             release_date=datetime.now().strftime('%Y-%m-%d'),
             spotify_url="",
             platform=platform,
         )
-        result = generator.generate_caption(request)
+        result = generator.generate_caption(request, context=context)
         if result:
             return generator.format_final_post(result, include_links=False)
     except Exception as e:

@@ -45,6 +45,8 @@ class PostContent:
     streaming_links: Dict[str, str]
     platform: str
     preview_url: Optional[str] = None  # Spotify 30-second preview URL
+    video_path: Optional[str] = None   # MP4 path for video platforms (TikTok, YouTube)
+    media_type: str = "image"          # "image" or "video"
 
 
 @dataclass

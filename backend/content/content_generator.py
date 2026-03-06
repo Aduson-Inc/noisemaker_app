@@ -2,29 +2,26 @@
 NOiSEMaKER Content Generator
 =============================
 
-Generates platform-specific promotional images for user songs.
+Generates platform-specific promotional content (images AND videos) for user songs.
 
-Process:
-1. Generate an abstract background via HuggingFace Inference API (FLUX.1-schnell)
-2. Composite the song's Spotify album artwork centered on the background (~60% canvas)
-3. Add text overlay with song name and artist name
-4. Upload final image to S3 and record in DynamoDB
+Pipeline:
+1. Analyze artwork via vision model (or PIL fallback) for mood/color data
+2. Generate AI background enriched with mood analysis via model_router
+3. Select template and render (static PIL for images, FFmpeg for videos)
+4. Build caption context from RAG pipeline (song metadata enrichment)
+5. Generate caption via Grok AI (or template fallback)
+6. Upload to S3 and record in DynamoDB
 
-Uses the same art style and artist rotation lists as frank_art_generator.py,
-but replaces the color system with song-specific color palettes (3 hex colors
-extracted from each song's Spotify artwork).
+Supported platforms: instagram, twitter, facebook, threads, reddit, discord (images)
+                     tiktok, youtube (videos, with static image fallback)
 
 Content reuse rules:
     - 1 or 2-song mode: content can be posted TWICE to same platform before regeneration
     - 3-song mode: content can be posted ONCE per platform before regeneration
-
-Extended promo songs ($10/month) are NOT handled here — they have a separate
-3-day rotation system.
 """
 
 import os
 import uuid
-import time
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
@@ -33,8 +30,11 @@ from typing import Optional
 import boto3
 import requests
 from boto3.dynamodb.conditions import Key, Attr
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from content.caption_generator import generate_caption
+from content.asset_pipeline import analyze_artwork, generate_background, download_artwork_from_s3
+from content.template_engine import select_template, render_static, render_video
+from content.rag_pipeline import build_caption_context
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +45,9 @@ logger = logging.getLogger(__name__)
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 S3_BUCKET = os.environ.get("S3_BUCKET", "noisemakerpromobydoowopp")
 
-# Platform image dimensions (width, height)
-# None = video platform — image generation skipped (Phase 2)
+# Platform dimensions and media type
+# "image" platforms get static JPEG composites
+# "video" platforms get FFmpeg-rendered MP4s (with optional audio)
 PLATFORM_SIZES = {
     "instagram": (1080, 1080),
     "twitter": (1200, 675),
@@ -54,37 +55,11 @@ PLATFORM_SIZES = {
     "threads": (1080, 1080),
     "reddit": (1200, 630),
     "discord": (1200, 675),
-    "tiktok": None,
-    "youtube": None,
+    "tiktok": (1080, 1920),
+    "youtube": (1080, 1920),
 }
 
-# =============================================================================
-# ROTATING LISTS (copied from frank_art_generator.py)
-# =============================================================================
-
-ART_STYLES = [
-    "Abstract geometric",
-    "Cubism",
-    "Surrealism",
-    "Art Deco",
-    "Minimalist",
-    "Abstract Expressionism",
-    "Vaporwave",
-]
-
-ARTIST_STYLES = [
-    "Jean-Michel Basquiat",
-    "Georges Braque",
-    "Mark Rothko",
-    "Ernst Ludwig Kirchner",
-    "Malgorzata Kmiec",
-    "Pascal Blanche",
-    "Kazimir Malevich",
-    "Yayoi Kusama",
-    "Willem de Kooning",
-    "Finn Campbell-Norman",
-    "Elena Kotliarker",
-]
+VIDEO_PLATFORMS = {"tiktok", "youtube"}
 
 # =============================================================================
 # AWS CLIENTS
@@ -92,129 +67,6 @@ ARTIST_STYLES = [
 
 s3_client = boto3.client("s3", region_name=AWS_REGION)
 dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
-ssm_client = boto3.client("ssm", region_name=AWS_REGION)
-
-HF_TOKEN = ssm_client.get_parameter(
-    Name="/noisemaker/huggingface_token",
-    WithDecryption=True,
-)["Parameter"]["Value"]
-
-
-# =============================================================================
-# IMAGE GENERATION (INTERNAL)
-# =============================================================================
-
-def _generate_background(
-    prompt: str, size: tuple[int, int], retry_count: int = 2
-) -> Optional[Image.Image]:
-    """
-    Generate background image via HuggingFace Inference API (FLUX.1-schnell).
-    Same model and retry logic as frank_art_generator.py.
-    """
-    try:
-        from huggingface_hub import InferenceClient
-
-        logger.info(f"Generating background: {prompt[:80]}...")
-
-        client = InferenceClient(api_key=HF_TOKEN)
-        image = client.text_to_image(
-            prompt=prompt,
-            model="black-forest-labs/FLUX.1-schnell",
-        )
-
-        if image.size != size:
-            image = image.resize(size, Image.Resampling.LANCZOS)
-
-        logger.info(f"Background generated: {image.size}")
-        return image
-
-    except Exception as e:
-        error_msg = str(e).lower()
-
-        if retry_count > 0 and any(
-            k in error_msg for k in ("queue", "timeout", "503", "429")
-        ):
-            logger.warning(f"Retrying in 30s... ({retry_count} retries left)")
-            time.sleep(30)
-            return _generate_background(prompt, size, retry_count - 1)
-
-        logger.error(f"Background generation failed: {e}")
-        return None
-
-
-def _download_artwork_from_s3(s3_key: str) -> Optional[Image.Image]:
-    """Download cached song artwork from S3."""
-    try:
-        response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
-        image_data = response["Body"].read()
-        return Image.open(BytesIO(image_data)).convert("RGBA")
-    except Exception as e:
-        logger.error(f"Failed to download artwork from S3: {e}")
-        return None
-
-
-def _composite_image(
-    background: Image.Image,
-    artwork: Image.Image,
-    song_name: str,
-    artist_name: str,
-) -> Image.Image:
-    """Layer artwork centered on background at ~60% of canvas, add text overlay."""
-    bg = background.convert("RGBA")
-    bg_w, bg_h = bg.size
-
-    # Resize artwork to ~60% of the smaller canvas dimension
-    target_size = int(min(bg_w, bg_h) * 0.6)
-    artwork = artwork.resize((target_size, target_size), Image.Resampling.LANCZOS)
-
-    # Center artwork on background
-    x = (bg_w - target_size) // 2
-    y = (bg_h - target_size) // 2
-    bg.paste(artwork, (x, y), artwork)
-
-    # Text overlay
-    draw = ImageDraw.Draw(bg)
-
-    try:
-        font_large = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            int(bg_h * 0.04),
-        )
-        font_small = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            int(bg_h * 0.03),
-        )
-    except OSError:
-        font_large = ImageFont.load_default()
-        font_small = ImageFont.load_default()
-
-    # Song name centered below artwork
-    text_y = y + target_size + int(bg_h * 0.03)
-    song_bbox = draw.textbbox((0, 0), song_name, font=font_large)
-    song_w = song_bbox[2] - song_bbox[0]
-    draw.text(
-        ((bg_w - song_w) // 2, text_y),
-        song_name,
-        fill="white",
-        font=font_large,
-        stroke_width=2,
-        stroke_fill="black",
-    )
-
-    # Artist name centered below song name
-    artist_y = text_y + int(bg_h * 0.05)
-    artist_bbox = draw.textbbox((0, 0), artist_name, font=font_small)
-    artist_w = artist_bbox[2] - artist_bbox[0]
-    draw.text(
-        ((bg_w - artist_w) // 2, artist_y),
-        artist_name,
-        fill="white",
-        font=font_small,
-        stroke_width=1,
-        stroke_fill="black",
-    )
-
-    return bg.convert("RGB")
 
 
 # =============================================================================
@@ -223,103 +75,132 @@ def _composite_image(
 
 def generate_content(song_data: dict, platform: str, user_id: str, song_count: int = 3) -> dict:
     """
-    Generate a promotional image for a song on a specific platform.
+    Generate promotional content (image or video) for a song on a specific platform.
+
+    Pipeline:
+        1. Analyze artwork (vision model or PIL fallback) → mood + color data
+        2. Generate AI background enriched with mood analysis
+        3. Select template and render (static PIL for image, FFmpeg for video)
+        4. Build caption context from RAG pipeline
+        5. Generate caption (Grok AI or template fallback)
+        6. Upload to S3 and record in DynamoDB
 
     Args:
         song_data: dict with song_id, song_name, artist_name, genre,
                    color_palette (list of 3 hex strings), cached_artwork_s3_key
         platform: target platform name
         user_id: the user's ID
+        song_count: number of active songs (affects content reuse rules)
 
     Returns:
-        dict with content_id, image_s3_key, caption.
-        Empty dict if platform is video-only or generation fails.
+        dict with content_id, image_s3_key or video_s3_key, caption, media_type.
+        Empty dict if generation fails.
     """
     size = PLATFORM_SIZES.get(platform)
     if size is None:
-        logger.info(f"Skipping {platform} — video platform (Phase 2)")
+        logger.warning(f"Unknown platform: {platform}")
         return {}
 
+    is_video = platform in VIDEO_PLATFORMS
     content_id = str(uuid.uuid4())
-
-    # Pick art style and artist — deterministic variety from content_id
     uid_int = uuid.UUID(content_id).int
-    art_style = ART_STYLES[uid_int % len(ART_STYLES)]
-    artist = ARTIST_STYLES[uid_int % len(ARTIST_STYLES)]
 
-    # Build prompt using song's color palette
-    color_str = ", ".join(song_data["color_palette"])
-    prompt = (
-        f"create a {art_style} background graphic "
-        f"in the style of {artist} using {color_str}"
-    )
+    # Step 1: Analyze artwork for mood and color
+    mood_analysis = analyze_artwork(song_data)
 
-    # Generate background
-    background = _generate_background(prompt, size)
+    # Step 2: Generate AI background
+    background = generate_background(mood_analysis, platform, size, uid_int)
     if background is None:
+        logger.error(f"Background generation failed for {platform}")
         return {}
 
-    # Download cached artwork from S3
-    artwork = _download_artwork_from_s3(song_data["cached_artwork_s3_key"])
+    # Step 3: Download cached artwork from S3
+    artwork = download_artwork_from_s3(song_data.get("cached_artwork_s3_key", ""))
     if artwork is None:
+        logger.error("Artwork download failed")
         return {}
 
-    # Composite background + artwork + text
-    final_image = _composite_image(
-        background, artwork, song_data["song_name"], song_data["artist_name"]
-    )
+    # Step 4: Select template and render
+    template = select_template(platform, size)
+    render_assets = {
+        "background": background,
+        "artwork": artwork,
+        "song_title": song_data.get("song_name", ""),
+        "artist_name": song_data.get("artist_name", ""),
+    }
 
-    # Generate caption
+    if is_video:
+        audio_key = song_data.get("audio_clip_s3_key")
+        rendered_bytes = render_video(template, render_assets, audio_key)
+        if rendered_bytes is None:
+            # FFmpeg unavailable or failed — fall back to static image
+            logger.warning(f"Video render failed for {platform}, falling back to static")
+            rendered_bytes = render_static(template, render_assets)
+            is_video = False
+    else:
+        rendered_bytes = render_static(template, render_assets)
+
+    if rendered_bytes is None:
+        logger.error("Render failed — no output bytes")
+        return {}
+
+    # Step 5: Build caption context and generate caption
+    caption_context = build_caption_context(user_id, song_data)
     caption = generate_caption(
-        song_data["song_name"],
-        song_data["artist_name"],
+        song_data.get("song_name", ""),
+        song_data.get("artist_name", ""),
         song_data.get("genre", "Music"),
         platform,
+        context=caption_context,
     )
 
-    # Upload to S3 as JPEG
-    s3_key = f"content/{user_id}/{content_id}.jpg"
-    try:
-        buffer = BytesIO()
-        final_image.save(buffer, format="JPEG", quality=85)
-        buffer.seek(0)
+    # Step 6: Upload to S3
+    media_type = "video" if is_video else "image"
+    ext = "mp4" if is_video else "jpg"
+    content_type = "video/mp4" if is_video else "image/jpeg"
+    s3_key = f"content/{user_id}/{content_id}.{ext}"
 
+    try:
         s3_client.put_object(
             Bucket=S3_BUCKET,
             Key=s3_key,
-            Body=buffer,
-            ContentType="image/jpeg",
+            Body=rendered_bytes,
+            ContentType=content_type,
         )
-        logger.info(f"Uploaded content: s3://{S3_BUCKET}/{s3_key}")
+        logger.info(f"Uploaded {media_type}: s3://{S3_BUCKET}/{s3_key}")
     except Exception as e:
         logger.error(f"S3 upload failed: {e}")
         return {}
 
-    # Store record in DynamoDB
+    # Step 7: Store record in DynamoDB
+    media_key_field = "video_s3_key" if is_video else "image_s3_key"
     table = dynamodb.Table("noisemaker-content")
     try:
         table.put_item(Item={
             "user_id": user_id,
             "content_id": content_id,
             "song_id": song_data["song_id"],
-            "image_s3_key": s3_key,
+            media_key_field: s3_key,
             "platform": platform,
             "caption": caption,
-            "color_palette": song_data["color_palette"],
+            "caption_context": caption_context,
+            "media_type": media_type,
+            "color_palette": song_data.get("color_palette", []),
             "song_count": song_count,
             "posted_to": {},
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "active",
         })
-        logger.info(f"Content record stored: {content_id}")
+        logger.info(f"Content record stored: {content_id} ({media_type})")
     except Exception as e:
         logger.error(f"DynamoDB write failed: {e}")
         return {}
 
     return {
         "content_id": content_id,
-        "image_s3_key": s3_key,
+        media_key_field: s3_key,
         "caption": caption,
+        "media_type": media_type,
     }
 
 

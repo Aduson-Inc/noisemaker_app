@@ -7,9 +7,9 @@ Queries noisemaker-scheduled-posts for pending posts due within the current hour
 dispatches them to social media platforms, and records results.
 
 Flow per post:
-1. Load content (image + caption) from noisemaker-content
-2. Load user's OAuth token for the target platform
-3. Download image from S3
+1. Load content (image/video + caption) from noisemaker-content
+2. Determine media_type (image or video) from content record
+3. Download media from S3
 4. Post to platform via multi_platform_poster
 5. Update post status, content posted_to counts, and posting history
 """
@@ -18,10 +18,9 @@ import os
 import json
 import logging
 from datetime import datetime, timezone, timedelta
-from io import BytesIO
 
 import boto3
-from boto3.dynamodb.conditions import Key, Attr
+from boto3.dynamodb.conditions import Key
 
 from content.multi_platform_poster import (
     MultiPlatformPostingEngine,
@@ -104,15 +103,18 @@ def _load_content(user_id: str, content_id: str) -> dict | None:
         return None
 
 
-def _download_image_from_s3(s3_key: str) -> str | None:
+def _download_media_from_s3(s3_key: str) -> str | None:
     """
-    Download image from S3 to a temporary file path.
+    Download media (image or video) from S3 to a temporary file path.
     Returns the local file path, or None on failure.
     """
+    if not s3_key:
+        logger.error("Empty S3 key provided")
+        return None
     try:
         local_path = f"/tmp/{s3_key.replace('/', '_')}"
         s3_client.download_file(S3_BUCKET, s3_key, local_path)
-        logger.info(f"Downloaded image: {s3_key}")
+        logger.info(f"Downloaded media: {s3_key}")
         return local_path
     except Exception as e:
         logger.error(f"S3 download failed for {s3_key}: {e}")
@@ -292,11 +294,16 @@ def _dispatch_post(post: dict) -> bool:
         _write_history(post, None, "failed", error)
         return False
 
-    # Download image from S3
-    image_s3_key = content.get("image_s3_key", "")
-    image_path = _download_image_from_s3(image_s3_key)
-    if not image_path:
-        error = f"Image download failed: {image_s3_key}"
+    # Determine media type and download from S3
+    media_type = content.get("media_type", "image")
+    if media_type == "video":
+        media_s3_key = content.get("video_s3_key", "")
+    else:
+        media_s3_key = content.get("image_s3_key", "")
+
+    media_path = _download_media_from_s3(media_s3_key)
+    if not media_path:
+        error = f"Media download failed: {media_s3_key}"
         _mark_failed(post, error)
         _requeue_post(post)
         _write_history(post, None, "failed", error)
@@ -305,10 +312,12 @@ def _dispatch_post(post: dict) -> bool:
     # Build PostContent for multi_platform_poster
     post_content = PostContent(
         caption=content.get("caption", ""),
-        image_path=image_path,
+        image_path=media_path if media_type == "image" else "",
         hashtags=[],
         streaming_links={},
         platform=platform,
+        video_path=media_path if media_type == "video" else None,
+        media_type=media_type,
     )
 
     # Post via the posting engine
